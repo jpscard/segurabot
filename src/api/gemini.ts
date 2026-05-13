@@ -15,47 +15,42 @@ function getAI() {
   return ai;
 }
 
-const INSURANCE_KB = [
-  {
-    category: "Coverage",
-    question: "What is covered in my basic policy?",
-    answer: "Basic coverage includes protection against fire, theft, windstorms, and vandalism. It also provides liability protection for accidents on your property."
-  },
-  {
-    category: "Claims",
-    question: "How do I file a claim?",
-    answer: "You can file a claim through our mobile app, website, or by calling our 24/7 support line at 0800-SEGURA. Have your policy number and incident details ready."
-  },
-  {
-    category: "Payments",
-    question: "What payment methods are accepted?",
-    answer: "We accept credit cards, debit cards, bank transfers, and PIX. You can also set up automatic monthly payments via our portal."
-  },
-  {
-    category: "Policy Changes",
-    question: "Can I cancel my policy at any time?",
-    answer: "Yes, you can cancel your policy at any time. A pro-rated refund will be issued for any unused portion of your premium, minus a small administrative fee if applicable."
-  },
-  {
-    category: "Policy Changes",
-    question: "How do I add a new vehicle to my policy?",
-    answer: "To add a vehicle, go to 'My Policies' > 'Add Asset' and upload the vehicle registration documents. Our team will review and update your premium within 48 hours."
-  }
-];
+import { FirebaseKnowledgeBaseRepository } from './FirebaseKnowledgeBaseRepository';
+import { FirebaseCustomerRepository } from './FirebaseCustomerRepository';
+
+const kbRepository = new FirebaseKnowledgeBaseRepository();
+const customerRepo = new FirebaseCustomerRepository();
 
 export async function askSeguraBot(
   messages: Message[],
   onChunk?: (chunk: string) => void,
-  provider: 'gemini' | 'ollama' | string = 'gemini'
+  provider: 'gemini' | 'ollama' | string = 'gemini',
+  userId?: string
 ) {
   try {
     const userMessage = messages[messages.length - 1].content;
     
-    // Simple RAG: Find relevant context from our KB
-    const relevantContext = INSURANCE_KB.filter(entry => 
-      userMessage.toLowerCase().includes(entry.category.toLowerCase()) ||
-      userMessage.toLowerCase().includes(entry.question.toLowerCase().split(' ')[0])
-    ).map(entry => `Q: ${entry.question}\nA: ${entry.answer}`).join('\n\n');
+    // Dynamic RAG: Find relevant context from Firebase Knowledge Base
+    const relevantDocs = await kbRepository.searchRelevantContext(userMessage);
+    const relevantContext = relevantDocs.length > 0 
+      ? relevantDocs.map(entry => `Q: ${entry.question}\nA: ${entry.answer}\nSource: ${entry.source || 'Base de Conhecimento'}`).join('\n\n')
+      : "";
+
+    let crmContext = "";
+    if (userId) {
+      const profile = await customerRepo.getCustomerProfile(userId);
+      if (profile) {
+        const tickets = await customerRepo.getSupportTickets(userId);
+        crmContext = `\n### Informações do Cliente (CRM):\nNome: ${profile.name}\nEmail: ${profile.email}\nCategoria: ${profile.loyaltyTier || 'Padrão'}\nApólices Ativas: ${profile.activePolicies.join(', ') || 'Nenhuma'}\n`;
+        
+        if (tickets.length > 0) {
+          crmContext += `\n### Histórico de Tickets de Suporte:\n`;
+          tickets.forEach(t => {
+            crmContext += `- Assunto: ${t.subject} | Status: ${t.status} | Resolução: ${t.resolution || 'N/A'}\n`;
+          });
+        }
+      }
+    }
 
     const systemInstruction = `
       You are SeguraBot, a specialized AI assistant for an insurance company called "Segura".
@@ -64,12 +59,14 @@ export async function askSeguraBot(
       ### Guidelines:
       - Use the provided context from our internal Knowledge Base to answer questions whenever possible.
       - If you don't know the answer, politely direct the user to call our support line at 0800-SEGURA.
+      - Use the Customer CRM Data to personalize the interaction and provide specific details about their policies or tickets if they ask.
       - Be concise but thorough.
       - Speak in Portuguese (PT-BR) as the primary language, unless the user speaks in English.
       - Maintain a professional yet friendly "Premium Trust" tone.
       
       ### Knowledge Base Context:
       ${relevantContext || "No specific direct match found in KB. Use general insurance best practices but mention our support for specific cases."}
+      ${crmContext}
     `;
 
     if (provider === 'ollama') {
@@ -168,5 +165,49 @@ Por favor, adicione a variável \`VITE_GEMINI_API_KEY\` no seu arquivo \`.env.lo
   } catch (error) {
     console.error("AI API Error:", error);
     throw error;
+  }
+}
+
+export async function extractFAQsFromPDF(base64Data: string): Promise<any[]> {
+  const aiInstance = getAI();
+  if (!aiInstance) throw new Error("A chave da API Gemini não está configurada.");
+
+  const prompt = `Aja como um analista de seguros sênior. Leia este manual/documento em anexo. 
+Extraia todas as regras, coberturas, procedimentos e diretrizes importantes.
+Crie um conjunto de Perguntas e Respostas cobrindo todo o documento.
+
+Retorne EXATAMENTE E APENAS UM ARRAY JSON válido contendo objetos no seguinte formato:
+[
+  {
+    "category": "Nome da Categoria (Ex: Sinistros, Coberturas)",
+    "question": "Pergunta extraída do documento?",
+    "answer": "Resposta detalhada com base no texto.",
+    "source": "Nome do Documento ou Secção"
+  }
+]
+ATENÇÃO: Não inclua blocos markdown (como \`\`\`json). Retorne apenas o array JSON puro, começando com [ e terminando com ].`;
+
+  // Remove the prefix "data:application/pdf;base64," if it exists
+  const b64 = base64Data.includes('base64,') ? base64Data.split('base64,')[1] : base64Data;
+
+  const response = await aiInstance.models.generateContent({
+    model: "gemini-1.5-flash",
+    contents: {
+      role: "user",
+      parts: [
+        { inlineData: { mimeType: "application/pdf", data: b64 } },
+        { text: prompt }
+      ]
+    }
+  });
+
+  const text = response.text || "[]";
+  const cleanedText = text.replace(/```json/g, '').replace(/```/g, '').trim();
+  
+  try {
+    return JSON.parse(cleanedText);
+  } catch (e) {
+    console.error("Erro ao fazer parse do JSON do Gemini:", cleanedText);
+    throw new Error("A IA não retornou um formato JSON válido. Tente enviar um PDF menor.");
   }
 }

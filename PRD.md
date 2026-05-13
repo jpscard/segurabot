@@ -4,7 +4,7 @@
 O **SeguraBot** é uma plataforma de assistente virtual baseada em Inteligência Artificial, construída com foco em segurança, manutenibilidade e um design premium. A aplicação utiliza uma abordagem de IA híbrida (integrando o Google Gemini e suporte opcional para modelos locais como Ollama) aliada a um banco de dados em tempo real (Firebase) para a gestão do histórico e autenticação.
 
 ## 2. Equipe e Informações do Projeto
-*   **Membros da Equipe:** João Paulo da Silva Cardoso e Leonardo Pereira.
+*   **Membros da Equipe:** Felipe Rafael dos Santos Barbosa, João Paulo da Silva Cardoso e Victor Amazonas Viegas Ferreira.
 *   **Repositório Oficial:** [GitHub - uci_ai](https://github.com/jpscard/uci_ai/tree/main)
 
 ## 3. Objetivos do Produto
@@ -41,3 +41,19 @@ A aplicação está adotando o conceito de **Spec-Driven Architecture** (Arquite
 2.  **Limpeza do Dashboard.tsx:** Remoção das chamadas diretas de API (Firestore e Gemini) de dentro do componente, substituindo-as pelo consumo dos respectivos *Use Cases*.
 3.  **Auditoria de UI/UX:** Revisar todos os componentes atuais para garantir a conformidade com as regras de design (remover ícones/emojis e substituir radios por botões estilizados).
 4.  **Implementação de Testes Isolados:** Criação de testes automatizados unitários para a camada `Application` usando mocks.
+
+## 8. Estratégia de Treinamento e Inteligência Artificial (RAG)
+Para garantir que o SeguraBot compreenda o contexto específico do negócio e forneça respostas precisas sem alucinações, o sistema utiliza uma pipeline avançada de Ingestão de Dados e RAG (Retrieval-Augmented Generation).
+
+**O que fazer:**
+*   Treinar o modelo de IA com dados históricos de interações e FAQs para melhorar significativamente a compreensão e as respostas.
+*   Utilizar LLMs (Large Language Models) como o Gemini para gerar respostas mais naturais e compreender intenções complexas, combinando a extração do documento e a fala humanizada.
+*   Aplicar o RAG para buscar ativamente o contexto relevante no Firestore e enriquecer as respostas em tempo real.
+
+**Fontes e Bases de Dados para Treinamento (Ingestão):**
+*   **Datasets de FAQs de seguros (Kaggle):** Importação e adaptação de conjuntos de dados estruturados (via uploader .csv/.json) frequentemente hospedados em plataformas como o Kaggle.
+*   **Documentação Pública de Processos:** Upload direto de Manuais, Termos e Condições de apólices em formato `.pdf`. A própria pipeline de IA (Gemini File API) faz a leitura, extrai as informações cruciais e converte em perguntas e respostas estruturadas para treinar o chatbot de forma autônoma.
+
+**Roadmap de Integração e Personalização Avançada (CRM & Tickets):**
+*   *(Opcional / Próxima Fase)* **Obter histórico de tickets de suporte (anonimizado):** Ingerir dados internos de atendimento como a fonte mais rica e realista para refinar o conhecimento da IA.
+*   *(Opcional / Próxima Fase)* **Integrar o chatbot com sistemas de CRM:** (Customer Relationship Management) para prover acesso às informações do segurado em tempo real, permitindo a personalização profunda do atendimento (ex: citar coberturas exatas do usuário logado).

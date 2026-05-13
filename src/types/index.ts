@@ -43,3 +43,22 @@ export enum OperationType {
   GET = 'get',
   WRITE = 'write',
 }
+
+export interface CustomerProfile {
+  id?: string;
+  userId: string; // Firebase Auth UID
+  name: string;
+  email: string;
+  phone?: string;
+  activePolicies: string[]; // e.g., ["Seguro Auto Premium", "Seguro Vida"]
+  loyaltyTier?: string; // e.g., "Gold", "Silver"
+}
+
+export interface SupportTicket {
+  id?: string;
+  userId: string;
+  subject: string;
+  status: 'aberto' | 'em_andamento' | 'fechado';
+  resolution?: string;
+  createdAt: string;
+}

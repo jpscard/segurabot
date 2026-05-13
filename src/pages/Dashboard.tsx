@@ -15,6 +15,8 @@ import { ChatSession, Message, Role, OperationType } from '../types';
 import { askSeguraBot } from '../api/gemini';
 import { cn } from '../utils/utils';
 import { useSettings } from '../context/SettingsContext';
+import { uploadRealDataToKnowledgeBase } from '../utils/seedKnowledgeBase';
+import { uploadRealCrmData } from '../utils/seedCrmData';
 
 export function Dashboard() {
   const [sessions, setSessions] = useState<ChatSession[]>([]);
@@ -22,8 +24,10 @@ export function Dashboard() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [isTraining, setIsTraining] = useState(false);
   const [streamingText, setStreamingText] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   
   const { provider } = useSettings();
   const user = auth.currentUser;
@@ -98,6 +102,40 @@ export function Dashboard() {
     }
   };
 
+  const handleTrainBotClick = () => {
+    fileInputRef.current?.click();
+  };
+
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setIsTraining(true);
+    try {
+      const count = await uploadRealDataToKnowledgeBase(file);
+      alert(`Treinamento concluído com sucesso! ${count} registros reais do Kaggle/Documentos foram injetados no banco.`);
+    } catch (error: any) {
+      alert(`Erro ao fazer upload dos dados: ${error.message}`);
+    } finally {
+      setIsTraining(false);
+      // Reset the file input
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
+
+  const handleLinkCrm = async () => {
+    if (!user) return;
+    try {
+      setIsTraining(true);
+      await uploadRealCrmData(user.uid);
+      alert("Integração CRM concluída! O Bot agora conhece suas apólices e histórico de suporte.");
+    } catch (e: any) {
+      alert("Erro ao conectar CRM: " + e.message);
+    } finally {
+      setIsTraining(false);
+    }
+  };
+
   const sendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!input.trim() || !user) return;
@@ -142,7 +180,7 @@ export function Dashboard() {
       await askSeguraBot(currentMessages, (chunk) => {
         setStreamingText(prev => prev + chunk);
         fullModelText += chunk;
-      }, provider);
+      }, provider, user.uid);
 
       await addDoc(collection(db, messagePath), {
         role: Role.MODEL,
@@ -168,12 +206,36 @@ export function Dashboard() {
     <div className="flex h-[calc(100vh-64px)] overflow-hidden bg-white dark:bg-slate-950 transition-colors duration-300">
       {/* Sidebar */}
       <aside className="w-80 border-r border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/50 flex flex-col hidden md:flex transition-colors">
-        <div className="p-4 border-b border-slate-200 dark:border-slate-800">
+        <div className="p-4 border-b border-slate-200 dark:border-slate-800 space-y-3">
           <button 
             onClick={createNewSession}
             className="w-full py-3 px-4 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl hover:border-blue-400 dark:hover:border-blue-500 hover:text-blue-600 dark:hover:text-blue-400 transition-all shadow-sm flex items-center justify-center gap-2 font-medium text-slate-700 dark:text-slate-300"
           >
             Novo Atendimento
+          </button>
+          
+          <input 
+            type="file" 
+            ref={fileInputRef} 
+            onChange={handleFileChange} 
+            accept=".csv,.json,.pdf" 
+            className="hidden" 
+          />
+          
+          <button 
+            onClick={handleTrainBotClick}
+            disabled={isTraining}
+            className="w-full py-2 px-4 bg-slate-100 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl hover:border-emerald-400 dark:hover:border-emerald-500 hover:text-emerald-600 dark:hover:text-emerald-400 transition-all text-xs font-medium text-slate-600 dark:text-slate-400 disabled:opacity-50"
+          >
+            {isTraining ? 'Injetando Dados...' : 'Fazer Upload de Dados (.csv/.json/.pdf)'}
+          </button>
+          
+          <button 
+            onClick={handleLinkCrm}
+            disabled={isTraining}
+            className="w-full py-2 px-4 bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-200 dark:border-indigo-800/50 rounded-xl hover:border-indigo-400 dark:hover:border-indigo-500 hover:text-indigo-600 dark:hover:text-indigo-400 transition-all text-xs font-medium text-indigo-700 dark:text-indigo-300 disabled:opacity-50"
+          >
+            Vincular meu CRM (Apólices)
           </button>
         </div>
         

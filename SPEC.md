@@ -40,10 +40,23 @@ Como separamos as responsabilidades através de Contratos (Interfaces), podemos 
 
 ## Próximos Passos (Plano de Refatoração)
 
-1.  **Reestruturação de Pastas:** 
-    *   `src/domain/models` (Transferir `types.ts`)
-    *   `src/domain/repositories` (Criar interfaces)
-    *   `src/infrastructure/firebase` (Adaptadores do Firebase)
-    *   `src/infrastructure/ai` (Adaptador do Gemini)
-    *   `src/application/useCases` (Lógica de chat isolada)
-2.  **Refatorar o `Dashboard.tsx`:** Remover chamadas diretas ao Firestore e Gemini de dentro dele.
+4.  **Reestruturação de Pastas:** (Concluído) Migração de Clean Architecture profunda para uma arquitetura "Flat" simplificada (`api/`, `components/`, `context/`, `pages/`, `services/`, `types/`, `utils/`) para facilitar a manutenção.
+5.  **Refatorar o `Dashboard.tsx`:** (Concluído) Consumo de casos de uso (ex: `ProcessUserMessageUseCase`).
+
+## 4. Pipeline de RAG e Ingestão de Conhecimento (Data Pipeline)
+Para suportar as funcionalidades inteligentes do assistente, a arquitetura incorpora um pipeline de RAG (Retrieval-Augmented Generation) dinâmico e flexível.
+
+### 4.1 Ingestão de Dados (Upload e Processamento)
+O sistema deve ser capaz de ingerir dados históricos e documentações para alimentar o banco vetorial / base de conhecimento no Firebase Firestore.
+*   **Dados Estruturados (CSV/JSON):** Importação de Datasets (ex: Kaggle) convertendo `category`, `question` e `answer` diretamente para a coleção `knowledge_base`.
+*   **Dados Não Estruturados (PDFs):** O upload de manuais e apólices em PDF utiliza as capacidades multimodais do LLM (ex: Gemini 1.5 Flash via `File API` ou `inlineData`) como um motor de "Intelligent Document Processing" (IDP). A IA lê o PDF, extrai FAQs e devolve um JSON estruturado pronto para ingestão, sem necessidade de bibliotecas pesadas de OCR no client-side.
+
+### 4.2 Arquitetura de RAG
+1.  **Recuperação (Retrieval):** O `IKnowledgeBaseRepository` (implementado pelo adaptador do Firebase) busca no Firestore o contexto relevante com base no input do usuário.
+2.  **Aumento (Augmentation):** O `ProcessUserMessageUseCase` injeta essas regras, manuais ou FAQs no *System Prompt* do `IAIAssistantService`.
+3.  **Geração (Generation):** O LLM gera a resposta combinando sua inteligência natural com as verdades (ground truth) extraídas dos dados da seguradora.
+
+### 4.3 Expansão Futura (CRM & Tickets)
+A arquitetura prevê interfaces para a ingestão ou consulta em tempo real (via adaptadores específicos na camada de infra/serviços) de:
+*   **Histórico de Atendimentos:** Extração de base de tickets de suporte anonimizados para calibração do modelo.
+*   **Integração CRM:** Criação de um `ICustomerRepository` que busca dados da apólice ativa do usuário logado e injeta esse contexto personalizado no motor de IA durante o atendimento.

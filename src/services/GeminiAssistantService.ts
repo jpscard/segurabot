@@ -8,7 +8,7 @@ const genAI = new GoogleGenerativeAI(import.meta.env.VITE_GEMINI_API_KEY || 'dum
 export class GeminiAssistantService implements IAIAssistantService {
   async generateResponse(history: Message[], newPrompt: string): Promise<string> {
     try {
-      const model = genAI.getGenerativeModel({ model: "gemini-1.5-pro" });
+      const model = genAI.getGenerativeModel({ model: "gemini-3-flash" });
       
       // Convert our history to Gemini's format if needed
       // For simplicity in this adapter, we just send the new prompt

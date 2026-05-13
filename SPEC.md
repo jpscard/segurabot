@@ -49,7 +49,7 @@ Para suportar as funcionalidades inteligentes do assistente, a arquitetura incor
 ### 4.1 Ingestão de Dados (Upload e Processamento)
 O sistema deve ser capaz de ingerir dados históricos e documentações para alimentar o banco vetorial / base de conhecimento no Firebase Firestore.
 *   **Dados Estruturados (CSV/JSON):** Importação de Datasets (ex: Kaggle) convertendo `category`, `question` e `answer` diretamente para a coleção `knowledge_base`.
-*   **Dados Não Estruturados (PDFs):** O upload de manuais e apólices em PDF utiliza as capacidades multimodais do LLM (ex: Gemini 1.5 Flash via `File API` ou `inlineData`) como um motor de "Intelligent Document Processing" (IDP). A IA lê o PDF, extrai FAQs e devolve um JSON estruturado pronto para ingestão, sem necessidade de bibliotecas pesadas de OCR no client-side.
+*   **Dados Não Estruturados (PDFs):** O upload de manuais e apólices em PDF utiliza as capacidades multimodais do LLM (ex: Gemini 3 Flash via `File API` ou `inlineData`) como um motor de "Intelligent Document Processing" (IDP). A IA lê o PDF, extrai FAQs e devolve um JSON estruturado pronto para ingestão, sem necessidade de bibliotecas pesadas de OCR no client-side.
 
 ### 4.2 Arquitetura de RAG
 1.  **Recuperação (Retrieval):** O `IKnowledgeBaseRepository` (implementado pelo adaptador do Firebase) busca no Firestore o contexto relevante com base no input do usuário.

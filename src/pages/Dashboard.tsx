@@ -17,8 +17,10 @@ import { cn } from '../utils/utils';
 import { useSettings } from '../context/SettingsContext';
 import { uploadRealDataToKnowledgeBase } from '../utils/seedKnowledgeBase';
 import { uploadRealCrmData } from '../utils/seedCrmData';
+import { CrmAdmin } from './CrmAdmin';
 
 export function Dashboard() {
+  const [currentView, setCurrentView] = useState<'chat' | 'crm'>('chat');
   const [sessions, setSessions] = useState<ChatSession[]>([]);
   const [activeSession, setActiveSession] = useState<ChatSession | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
@@ -118,22 +120,12 @@ export function Dashboard() {
       alert(`Erro ao fazer upload dos dados: ${error.message}`);
     } finally {
       setIsTraining(false);
-      // Reset the file input
       if (fileInputRef.current) fileInputRef.current.value = '';
     }
   };
 
-  const handleLinkCrm = async () => {
-    if (!user) return;
-    try {
-      setIsTraining(true);
-      await uploadRealCrmData(user.uid);
-      alert("Integração CRM concluída! O Bot agora conhece suas apólices e histórico de suporte.");
-    } catch (e: any) {
-      alert("Erro ao conectar CRM: " + e.message);
-    } finally {
-      setIsTraining(false);
-    }
+  const handleOpenCrm = () => {
+    setCurrentView('crm');
   };
 
   const sendMessage = async (e: React.FormEvent) => {
@@ -231,11 +223,10 @@ export function Dashboard() {
           </button>
           
           <button 
-            onClick={handleLinkCrm}
-            disabled={isTraining}
-            className="w-full py-2 px-4 bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-200 dark:border-indigo-800/50 rounded-xl hover:border-indigo-400 dark:hover:border-indigo-500 hover:text-indigo-600 dark:hover:text-indigo-400 transition-all text-xs font-medium text-indigo-700 dark:text-indigo-300 disabled:opacity-50"
+            onClick={handleOpenCrm}
+            className="w-full py-2 px-4 bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-200 dark:border-indigo-800/50 rounded-xl hover:border-indigo-400 dark:hover:border-indigo-500 hover:text-indigo-600 dark:hover:text-indigo-400 transition-all text-xs font-medium text-indigo-700 dark:text-indigo-300"
           >
-            Vincular meu CRM (Apólices)
+            Acessar Painel CRM
           </button>
         </div>
         
@@ -243,7 +234,7 @@ export function Dashboard() {
           {sessions.map((session) => (
             <div 
               key={session.id}
-              onClick={() => setActiveSession(session)}
+              onClick={() => { setActiveSession(session); setCurrentView('chat'); }}
               className={cn(
                 "p-3 rounded-xl cursor-pointer transition-all border group relative",
                 activeSession?.id === session.id 
@@ -286,8 +277,11 @@ export function Dashboard() {
       </aside>
 
       {/* Main Chat Area */}
-      <main className="flex-1 flex flex-col relative bg-white dark:bg-slate-950 transition-colors">
-        {!activeSession && messages.length === 0 ? (
+      {currentView === 'crm' ? (
+        <CrmAdmin />
+      ) : (
+        <main className="flex-1 flex flex-col relative bg-white dark:bg-slate-950 transition-colors">
+          {!activeSession && messages.length === 0 ? (
           <div className="flex-1 flex flex-col items-center justify-center p-8 text-center space-y-6">
             <div className="w-20 h-20 bg-blue-50 dark:bg-blue-900/20 rounded-3xl flex items-center justify-center text-blue-600 dark:text-blue-400 font-bold text-2xl transition-colors">
               Bot
@@ -397,6 +391,7 @@ export function Dashboard() {
           </p>
         </div>
       </main>
+      )}
     </div>
   );
 }

@@ -144,7 +144,7 @@ Por favor, adicione a variável \`VITE_GEMINI_API_KEY\` no seu arquivo \`.env.lo
     }
 
     const responseStream = await aiInstance.models.generateContentStream({
-      model: "gemini-1.5-flash",
+      model: "gemini-3-flash",
       contents: { parts: [{ text: messages[messages.length - 1].content }] },
       config: {
         systemInstruction,
@@ -191,7 +191,7 @@ ATENÇÃO: Não inclua blocos markdown (como \`\`\`json). Retorne apenas o array
   const b64 = base64Data.includes('base64,') ? base64Data.split('base64,')[1] : base64Data;
 
   const response = await aiInstance.models.generateContent({
-    model: "gemini-1.5-flash",
+    model: "gemini-3-flash",
     contents: {
       role: "user",
       parts: [

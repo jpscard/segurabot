@@ -16,11 +16,58 @@ O **SeguraBot** é uma plataforma de assistente virtual baseada em Inteligência
 * **Navegação e Controles:** Navegação através de botões estilizados.
 * **Estética Visual:** Suporte a temas Claro e Escuro (Light e Dark modes).
 
+## Engenharia de Software e Arquitetura
+
+O projeto adota uma arquitetura inspirada em **Clean Architecture** (Spec-Driven), mas estruturada de forma *flat* (plana) para maior produtividade no ecossistema React/Vite. O objetivo principal é isolar as Regras de Negócio da Infraestrutura e da Tela (UI).
+
+### Estrutura de Diretórios (`src/`)
+
+```text
+src/
+├── api/          # Adaptadores de infraestrutura concretos (ex: FirebaseRepositories, Gemini API clients)
+├── components/   # Componentes visuais (UI) focados apenas em renderização e controle de visualização
+├── context/      # Gerenciamento de estado global da aplicação (React Context / AuthProvider)
+├── pages/        # Telas (Páginas) que orquestram os componentes (ex: Dashboard, Landing Page, Auth)
+├── services/     # Casos de Uso (Application Layer) - Orquestração da lógica de negócio pura (ex: ProcessUserMessageUseCase)
+├── types/        # Domínio (Domain) - Entidades de negócio e Contratos/Interfaces puros (Ports)
+└── utils/        # Funções utilitárias auxiliares e scripts de carga de banco de dados (seeders)
+```
+
+### Princípios de "Harness Engineering" e Testabilidade
+O uso intenso de interfaces (`types/`) e a injeção de dependências nos `services/` nos permite isolar completamente as chamadas externas. Podemos testar a lógica do chatbot inteiro injetando *Mock Repositories* do Firebase e do Gemini. Isso garante que a suíte de testes rode em milissegundos em ambientes controlados, sem gastar cota de API ou necessitar de acesso a banco de dados real.
+
+### Pipeline de RAG (Retrieval-Augmented Generation)
+
+Para evitar alucinações da inteligência artificial e entregar respostas precisas sobre apólices e regras de seguros da empresa, implementamos uma pipeline dinâmica robusta:
+
+```mermaid
+flowchart TD
+    User([Usuário]) -->|Envia Pergunta| UI[UI React / Dashboard]
+    UI -->|Chama UseCase| Usecase(ProcessUserMessageUseCase)
+    
+    subgraph Data Pipeline
+    Usecase -->|Busca Contexto Relevante| KBRepo[(KnowledgeBase Repository)]
+    KBRepo -->|Retorna FAQs e Regras| Usecase
+    Usecase -->|Busca Perfil Logado| CRMRepo[(CRM Repository)]
+    CRMRepo -->|Retorna Dados da Apólice| Usecase
+    end
+    
+    Usecase -->|Prompt Enriquecido (Ground Truth)| AI[Motor de IA - Gemini 1.5 Flash]
+    AI -->|Resposta Inteligente| Usecase
+    Usecase -->|Salva Histórico| ChatRepo[(Chat Repository)]
+    Usecase -->|Retorna para Tela| UI
+```
+
+1. **Ingestão (Upload):** Documentos, NFTs, PDFs e FAQs processados e extraídos via Gemini 1.5 (usado como LLM para IDP - Intelligent Document Processing) e salvos no Firestore (`knowledge_base`).
+2. **Recuperação (Retrieval):** O `IKnowledgeBaseRepository` busca os contextos mais relevantes no Firebase de acordo com a dúvida do usuário.
+3. **Aumento (Augmentation):** O Use Case une a pergunta do usuário, os dados da apólice atual (`ICustomerRepository`) e o contexto do RAG diretamente no *System Prompt* do motor inteligente.
+4. **Geração (Generation):** A IA gera a resposta com embasamento total nos dados internos do sistema, fornecendo um atendimento altamente personalizado.
+
 ## Funcionalidades
 * **Autenticação:** Cadastro, login e logout seguros via Firebase Auth.
 * **Gestão de Sessões de Chat:** Histórico e persistência de sessões no Firestore.
-* **Motor de IA e RAG:** Integração com APIs do Gemini 1.5 Flash para processar arquivos, gerar embeddings e realizar Retrieval-Augmented Generation (RAG) utilizando Firebase como Knowledge Base.
-* **CRM Integrado:** Integração inicial com dados simulados de CRM de clientes para respostas personalizadas.
+* **Motor de IA e RAG:** Integração com APIs do Gemini 1.5 Flash para análise multimodal e conversação.
+* **CRM Integrado:** Integração inicial com dados simulados de CRM de clientes para respostas personalizadas por usuário.
 
 ## Como Rodar o Projeto
 
@@ -38,7 +85,13 @@ O **SeguraBot** é uma plataforma de assistente virtual baseada em Inteligência
    # Adicione as demais variáveis de configuração do Firebase
    ```
 
-3. Inicie a aplicação localmente:
+3. (Opcional) Popular banco de dados inicial (Seeders):
+   ```bash
+   npm run seed:crm
+   npm run seed:kb
+   ```
+
+4. Inicie a aplicação localmente:
    ```bash
    npm run dev
    ```

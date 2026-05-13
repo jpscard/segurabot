@@ -1,0 +1,72 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "User Profile",
+      "description": "Basic user information and settings.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "email": { "type": "string" },
+        "displayName": { "type": "string" },
+        "photoURL": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "email", "createdAt"]
+    },
+    "ChatSession": {
+      "title": "Chat Session",
+      "description": "A conversation session between a user and the AI assistant.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "title": { "type": "string" },
+        "lastMessage": { "type": "string" },
+        "updatedAt": { "type": "string", "format": "date-time" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "updatedAt", "createdAt"]
+    },
+    "Message": {
+      "title": "Message",
+      "description": "An individual message within a chat session.",
+      "type": "object",
+      "properties": {
+        "role": { "type": "string", "enum": ["user", "model"] },
+        "content": { "type": "string" },
+        "timestamp": { "type": "string", "format": "date-time" }
+      },
+      "required": ["role", "content", "timestamp"]
+    },
+    "KnowledgeBase": {
+      "title": "Knowledge Base Entry",
+      "description": "FAQ or policy documentation for RAG.",
+      "type": "object",
+      "properties": {
+        "category": { "type": "string" },
+        "question": { "type": "string" },
+        "answer": { "type": "string" },
+        "source": { "type": "string" }
+      },
+      "required": ["category", "question", "answer"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "UserProfile",
+      "description": "User profile documents."
+    },
+    "/users/{userId}/chat_sessions/{sessionId}": {
+      "schema": "ChatSession",
+      "description": "Chat sessions for a specific user."
+    },
+    "/users/{userId}/chat_sessions/{sessionId}/messages/{messageId}": {
+      "schema": "Message",
+      "description": "Messages within a chat session."
+    },
+    "/knowledge_base/{entryId}": {
+      "schema": "KnowledgeBase",
+      "description": "Global knowledge base for the insurance chatbot."
+    }
+  }
+}

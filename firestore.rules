@@ -1,0 +1,57 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Default deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Common helpers
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    // Users collection
+    match /users/{userId} {
+      allow read: if isOwner(userId);
+      allow create: if isOwner(userId) && 
+        request.resource.data.keys().hasAll(['uid', 'email', 'createdAt']) &&
+        request.resource.data.uid == request.auth.uid;
+      allow update: if isOwner(userId) &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['displayName', 'photoURL']);
+    }
+
+    // Chat sessions
+    match /users/{userId}/chat_sessions/{sessionId} {
+      allow read: if isOwner(userId);
+      allow create: if isOwner(userId) && 
+        request.resource.data.keys().hasAll(['userId', 'title', 'lastMessage', 'updatedAt', 'createdAt']) &&
+        request.resource.data.userId == request.auth.uid;
+      allow update: if isOwner(userId) &&
+        request.resource.data.diff(resource.data).affectedKeys().hasAny(['title', 'lastMessage', 'updatedAt']);
+      allow delete: if isOwner(userId);
+
+      // Messages sub-collection
+      match /messages/{messageId} {
+        allow read: if isOwner(userId);
+        allow create: if isOwner(userId) &&
+          request.resource.data.keys().hasAll(['role', 'content', 'timestamp']) &&
+          (request.resource.data.role == 'user' || request.resource.data.role == 'model');
+      }
+    }
+
+    // Knowledge Base - Read-only for signed-in users
+    match /knowledge_base/{entryId} {
+      allow read: if isSignedIn();
+      allow write: if false; // Only admin via console/internal tools
+    }
+  }
+}

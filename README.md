@@ -42,19 +42,19 @@ Para evitar alucinações da inteligência artificial e entregar respostas preci
 
 ```mermaid
 flowchart TD
-    User([Usuário]) -->|Envia Pergunta| UI[UI React / Dashboard]
-    UI -->|Chama UseCase| Usecase(ProcessUserMessageUseCase)
+    User(["Usuário"]) -->|Envia Pergunta| UI["UI React / Dashboard"]
+    UI -->|Chama UseCase| Usecase("ProcessUserMessageUseCase")
     
     subgraph Data Pipeline
-    Usecase -->|Busca Contexto Relevante| KBRepo[(KnowledgeBase Repository)]
+    Usecase -->|Busca Contexto Relevante| KBRepo[("KnowledgeBase Repository")]
     KBRepo -->|Retorna FAQs e Regras| Usecase
-    Usecase -->|Busca Perfil Logado| CRMRepo[(CRM Repository)]
+    Usecase -->|Busca Perfil Logado| CRMRepo[("CRM Repository")]
     CRMRepo -->|Retorna Dados da Apólice| Usecase
     end
     
-    Usecase -->|Prompt Enriquecido (Ground Truth)| AI[Motor de IA - Gemini 3 Flash]
+    Usecase -->|Prompt Enriquecido Ground Truth| AI["Motor de IA - Gemini 3 Flash"]
     AI -->|Resposta Inteligente| Usecase
-    Usecase -->|Salva Histórico| ChatRepo[(Chat Repository)]
+    Usecase -->|Salva Histórico| ChatRepo[("Chat Repository")]
     Usecase -->|Retorna para Tela| UI
 ```
 

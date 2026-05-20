@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react';
 import { onAuthStateChanged, User } from 'firebase/auth';
 import { auth } from './infrastructure/firebase';
-import { Header } from './presentation/components/Header';
 import { Landing } from './presentation/pages/Landing';
 import { Dashboard } from './presentation/pages/Dashboard';
 
@@ -37,7 +36,6 @@ export default function App() {
     <ThemeProvider>
       <SettingsProvider>
         <div className="h-screen flex flex-col bg-[#F3F5F9] dark:bg-slate-950 text-slate-900 dark:text-slate-50 font-sans selection:bg-blue-100 dark:selection:bg-blue-900/50 selection:text-blue-900 dark:selection:text-blue-100 transition-colors duration-300">
-          {!user && <Header />}
           <main className={`flex-1 scroll-smooth ${user ? 'overflow-hidden h-screen flex' : 'overflow-y-auto'}`}>
             {user ? <Dashboard /> : <Landing />}
           </main>

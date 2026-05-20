@@ -220,18 +220,18 @@ export function ChatWidget() {
       {isOpen && (
         <div className="mb-4 w-80 md:w-96 h-[450px] bg-white dark:bg-slate-900 rounded-lg shadow-2xl border border-slate-200 dark:border-slate-800 flex flex-col overflow-hidden transition-all duration-300">
           {/* Header */}
-          <div className="px-4 py-3 bg-slate-900 dark:bg-blue-600 text-white flex justify-between items-center">
+          <div className="px-4 py-3 bg-[#5E81F4] dark:bg-slate-800 text-white flex justify-between items-center transition-colors duration-300">
             <div>
               <h3 className="font-bold text-sm">Atendimento SeguraBot</h3>
-              <p className="text-xs text-slate-300 dark:text-blue-100">Online</p>
+              <p className="text-xs text-blue-100 dark:text-slate-400">Online</p>
             </div>
             <div className="flex items-center gap-4">
-              <button className="text-white hover:text-slate-300 dark:hover:text-blue-100 transition-colors" title="Ligar">
+              <button className="text-white hover:text-blue-100 dark:hover:text-slate-300 transition-colors" title="Ligar">
                 <Phone size={18} />
               </button>
               <button 
                 onClick={() => setIsOpen(false)}
-                className="text-xs uppercase font-bold tracking-wider hover:text-slate-300 dark:hover:text-blue-100 transition-colors"
+                className="text-xs uppercase font-bold tracking-wider hover:text-blue-100 dark:hover:text-slate-300 transition-colors"
               >
                 Fechar
               </button>

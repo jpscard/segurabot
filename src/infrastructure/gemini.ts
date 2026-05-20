@@ -2,15 +2,20 @@ import { GoogleGenAI } from "@google/genai";
 import { Message, Role } from "../domain";
 
 let ai: GoogleGenAI | null = null;
+let lastApiKey: string | null = null;
 
 function getAI() {
-  if (!ai) {
-    const apiKey = import.meta.env.VITE_GEMINI_API_KEY || "";
-    if (!apiKey) {
-      console.warn("GEMINI_API_KEY is not set. Using mock mode.");
-      return null;
-    }
+  const customKey = typeof window !== 'undefined' ? localStorage.getItem('gemini_api_key') : null;
+  const apiKey = customKey || import.meta.env.VITE_GEMINI_API_KEY || "";
+  
+  if (!apiKey) {
+    console.warn("GEMINI_API_KEY is not set. Using mock mode.");
+    return null;
+  }
+
+  if (!ai || lastApiKey !== apiKey) {
     ai = new GoogleGenAI({ apiKey });
+    lastApiKey = apiKey;
   }
   return ai;
 }
@@ -79,11 +84,15 @@ export async function askSeguraBot(
         }))
       ];
 
+      const selectedModel = (typeof window !== 'undefined' && typeof localStorage !== 'undefined')
+        ? localStorage.getItem('ollama_model') || 'llama3'
+        : 'llama3';
+
       const response = await fetch('http://localhost:11434/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          model: 'llama3', // You can change this to any model you have installed locally
+          model: selectedModel,
           messages: ollamaMessages,
           stream: true,
         }),
@@ -211,3 +220,109 @@ ATENÇÃO: Não inclua blocos markdown (como \`\`\`json). Retorne apenas o array
     throw new Error("A IA não retornou um formato JSON válido. Tente enviar um PDF menor.");
   }
 }
+
+export async function generateCustomerSummaryWithAI(profileData: any, tickets: any[]): Promise<string> {
+  const aiInstance = getAI();
+  
+  const policiesDesc = profileData.policies && profileData.policies.length > 0 
+    ? profileData.policies.map((p: any) => `- Ramo: ${p.type} | Bem: ${p.assetDescription} | Limite: ${p.coverageLimits} | Prêmio: R$ ${p.premiumValue}`).join('\n')
+    : 'Nenhuma apólice cadastrada.';
+    
+  const claimsDesc = profileData.claims && profileData.claims.length > 0
+    ? profileData.claims.map((c: any) => `- Descrição: ${c.description} | Status: ${c.status} | Data: ${c.openedAt}`).join('\n')
+    : 'Nenhum sinistro em andamento.';
+
+  const ticketsDesc = tickets && tickets.length > 0
+    ? tickets.map((t: any) => `- Assunto: ${t.subject} | Status: ${t.status} | Resolução: ${t.resolution || 'N/A'}`).join('\n')
+    : 'Nenhum chamado de suporte aberto.';
+
+  if (!aiInstance) {
+    // Fallback dinâmico detalhado e real
+    return `Cliente: ${profileData.name || 'Cliente'}
+Fidelidade: ${profileData.loyaltyTier || 'Padrão'}
+Fase da Vida: ${profileData.lifeStage || 'Não Informada'}
+Score de Risco: ${profileData.riskScore || 0}%
+
+Apólices Cadastradas:
+${policiesDesc}
+
+Sinistros:
+${claimsDesc}
+
+Chamados de Suporte:
+${ticketsDesc}
+
+(Nota: Este resumo foi consolidado localmente em modo offline/sem chave API).`;
+  }
+
+  const prompt = `Consolide um resumo analítico sucinto (máximo 4 linhas) do seguinte cliente da Seguradora Segura para guiar o atendimento por IA.
+Nome: ${profileData.name}
+Telefone: ${profileData.phone || 'Não cadastrado'}
+Fidelidade: ${profileData.loyaltyTier || 'Padrão'}
+Fase da Vida: ${profileData.lifeStage || 'Não informada'}
+Score de Risco Sinistral: ${profileData.riskScore || 0}%
+
+Apólices Ativas:
+${policiesDesc}
+
+Histórico de Sinistros:
+${claimsDesc}
+
+Chamados de Suporte:
+${ticketsDesc}
+
+Escreva em português (PT-BR) de forma profissional, direta e executiva, destacando oportunidades de venda (cross-selling) ou pontos críticos que o atendente de IA deve ter cuidado (ex: sinistro em análise, score alto risco).`;
+
+  try {
+    const response = await aiInstance.models.generateContent({
+      model: "gemini-3-flash",
+      contents: prompt
+    });
+    return response.text?.trim() || "Sem resposta da IA.";
+  } catch (error) {
+    console.error("Erro na geração do resumo do cliente:", error);
+    throw error;
+  }
+}
+
+export async function extractDocumentOcrWithAI(base64Data: string, fileType: string): Promise<string> {
+  const aiInstance = getAI();
+  if (!aiInstance) {
+    throw new Error("A chave da API Gemini não está configurada para processar OCR por IA.");
+  }
+
+  const prompt = `Você é um leitor de OCR de seguros especializado. Analise a imagem ou documento anexo do tipo "${fileType}".
+Extraia todos os dados textuais cruciais em português de forma clara e organizada, por exemplo:
+- Para CNH/RG: Nome completo, CPF/RG, data de nascimento, validade, categoria de habilitação (se aplicável).
+- Para CRLV: Placa, chassi, modelo do veículo, ano de fabricação/modelo, proprietário.
+- Para outros: Dados do titular, datas chaves, valores envolvidos ou endereços.
+
+Retorne apenas o texto limpo com os dados extraídos de forma estruturada. Seja preciso e não invente dados adicionais.`;
+
+  // Remove o prefixo base64 se houver
+  const b64 = base64Data.includes('base64,') ? base64Data.split('base64,')[1] : base64Data;
+  // Determina o tipo MIME
+  let mimeType = "application/pdf";
+  if (base64Data.includes("data:")) {
+    const matched = base64Data.match(/data:([^;]+);base64,/);
+    if (matched) mimeType = matched[1];
+  }
+
+  try {
+    const response = await aiInstance.models.generateContent({
+      model: "gemini-3-flash",
+      contents: {
+        role: "user",
+        parts: [
+          { inlineData: { mimeType, data: b64 } },
+          { text: prompt }
+        ]
+      }
+    });
+    return response.text?.trim() || "Não foi possível extrair dados legíveis do documento.";
+  } catch (error) {
+    console.error("Erro no processamento OCR por IA:", error);
+    throw error;
+  }
+}
+

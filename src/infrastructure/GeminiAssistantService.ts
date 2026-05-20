@@ -3,15 +3,20 @@ import { Message, Role } from '../domain/Chat';
 import { GoogleGenAI } from '@google/genai';
 
 let ai: GoogleGenAI | null = null;
+let lastApiKey: string | null = null;
 
 function getAI() {
-  if (!ai) {
-    const apiKey = import.meta.env.VITE_GEMINI_API_KEY || "";
-    if (!apiKey) {
-      console.warn("GEMINI_API_KEY is not set. Using mock mode.");
-      return null;
-    }
+  const customKey = typeof window !== 'undefined' ? localStorage.getItem('gemini_api_key') : null;
+  const apiKey = customKey || import.meta.env.VITE_GEMINI_API_KEY || "";
+  
+  if (!apiKey) {
+    console.warn("GEMINI_API_KEY is not set. Using mock mode.");
+    return null;
+  }
+
+  if (!ai || lastApiKey !== apiKey) {
     ai = new GoogleGenAI({ apiKey });
+    lastApiKey = apiKey;
   }
   return ai;
 }

@@ -1,9 +1,10 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { auth, handleFirestoreError } from '../../infrastructure/firebase';
 import { FirebaseCustomerRepository } from '../../infrastructure/FirebaseCustomerRepository';
 import { FirebaseChatRepository } from '../../infrastructure/FirebaseChatRepository';
 import { CustomerProfile, SupportTicket, OperationType, Policy, Claim, DocumentRecord } from '../../domain';
 import { ChatSession, Message, Role } from '../../domain/Chat';
+import { generateCustomerSummaryWithAI, extractDocumentOcrWithAI } from '../../infrastructure/gemini';
 
 export function CrmAdmin() {
   const user = auth.currentUser;
@@ -38,6 +39,11 @@ export function CrmAdmin() {
 
   const customerRepo = new FirebaseCustomerRepository();
   const chatRepo = new FirebaseChatRepository();
+
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [documentsBase64, setDocumentsBase64] = useState<Record<string, string>>({});
+  const [isExtractingOcr, setIsExtractingOcr] = useState<Record<string, boolean>>({});
+  const [isGeneratingSummary, setIsGeneratingSummary] = useState(false);
 
   useEffect(() => {
     if (!user) return;
@@ -142,10 +148,10 @@ export function CrmAdmin() {
     setDetailedPolicies([...detailedPolicies, {
       id: Date.now().toString(),
       type: 'Auto',
-      assetDescription: 'Novo Veículo',
-      coverageLimits: '100k',
-      expirationDate: new Date(new Date().setFullYear(new Date().getFullYear() + 1)).toISOString().split('T')[0],
-      premiumValue: 1500
+      assetDescription: '',
+      coverageLimits: '',
+      expirationDate: '',
+      premiumValue: 0
     }]);
   };
 
@@ -157,7 +163,7 @@ export function CrmAdmin() {
     setClaimsList([...claimsList, {
       id: Date.now().toString(),
       policyId: detailedPolicies[0]?.id || 'sem-apolice',
-      description: 'Colisão traseira',
+      description: '',
       status: 'aberto',
       openedAt: new Date().toISOString().split('T')[0],
       updatedAt: new Date().toISOString().split('T')[0]
@@ -168,29 +174,99 @@ export function CrmAdmin() {
     setClaimsList(claimsList.filter(c => c.id !== id));
   };
 
-  const addDocument = () => {
-    setDocumentsList([...documentsList, {
-      id: Date.now().toString(),
-      type: 'CNH',
-      url: 'https://exemplo.com/doc.pdf',
-      uploadedAt: new Date().toISOString().split('T')[0]
-    }]);
+  const triggerFileSelect = () => {
+    fileInputRef.current?.click();
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const base64 = event.target?.result as string;
+      
+      let inferredType = 'Outro';
+      const fileNameLower = file.name.toLowerCase();
+      if (fileNameLower.includes('cnh') || fileNameLower.includes('motorista') || fileNameLower.includes('carteira')) inferredType = 'CNH';
+      else if (fileNameLower.includes('crlv') || fileNameLower.includes('veiculo') || fileNameLower.includes('carro')) inferredType = 'CRLV';
+      else if (fileNameLower.includes('rg') || fileNameLower.includes('identidade') || fileNameLower.includes('cpf')) inferredType = 'RG';
+      else if (fileNameLower.includes('comprovante') || fileNameLower.includes('residencia') || fileNameLower.includes('luz') || fileNameLower.includes('agua')) inferredType = 'Comprovante';
+      else if (fileNameLower.includes('laudo') || fileNameLower.includes('medico') || fileNameLower.includes('exame')) inferredType = 'Laudo';
+
+      const docId = Date.now().toString();
+
+      // Salva o base64 em memória para uso opcional em OCR por IA
+      setDocumentsBase64(prev => ({ ...prev, [docId]: base64 }));
+
+      setDocumentsList([...documentsList, {
+        id: docId,
+        type: inferredType,
+        url: file.name,
+        uploadedAt: new Date().toISOString().split('T')[0],
+        extractedData: ''
+      }]);
+    };
+    reader.readAsDataURL(file);
+    if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
   const removeDocument = (id: string) => {
     setDocumentsList(documentsList.filter(d => d.id !== id));
+    setDocumentsBase64(prev => {
+      const copy = { ...prev };
+      delete copy[id];
+      return copy;
+    });
   };
 
-  const generateAiSummary = () => {
-    setAiSummary('Cliente desde 2021. Costuma acionar o seguro para pequenos reparos residenciais. Atualmente na fase "Casado", boa oportunidade para Seguro de Vida e Previdência. Último contato foi amigável, mas reclamou de lentidão na vistoria.');
+  const generateAiSummary = async () => {
+    setIsGeneratingSummary(true);
+    try {
+      const profileData = {
+        name,
+        loyaltyTier: tier,
+        lifeStage,
+        riskScore,
+        policies: detailedPolicies,
+        claims: claimsList
+      };
+      const summary = await generateCustomerSummaryWithAI(profileData, tickets);
+      setAiSummary(summary);
+    } catch (err: any) {
+      alert(`Erro ao consolidar resumo com IA: ${err.message || err}`);
+    } finally {
+      setIsGeneratingSummary(false);
+    }
   };
 
-  const extractDataFromDoc = (id: string) => {
-    const newDocs = [...documentsList];
-    const idx = newDocs.findIndex(d => d.id === id);
-    if (idx > -1) {
-      newDocs[idx].extractedData = 'Nome: João Paulo, Categoria B, Validade 2030';
-      setDocumentsList(newDocs);
+  const extractDataFromDoc = async (id: string) => {
+    const docItem = documentsList.find(d => d.id === id);
+    if (!docItem) return;
+
+    setIsExtractingOcr(prev => ({ ...prev, [id]: true }));
+    try {
+      const base64 = documentsBase64[id];
+      if (base64) {
+        const extracted = await extractDocumentOcrWithAI(base64, docItem.type);
+        const newDocs = [...documentsList];
+        const idx = newDocs.findIndex(d => d.id === id);
+        if (idx > -1) {
+          newDocs[idx].extractedData = extracted;
+          setDocumentsList(newDocs);
+        }
+      } else {
+        const newDocs = [...documentsList];
+        const idx = newDocs.findIndex(d => d.id === id);
+        if (idx > -1) {
+          newDocs[idx].extractedData = `Metadados do documento:\n- Tipo: ${docItem.type}\n- Nome: ${docItem.url}\n- Upload: ${docItem.uploadedAt}\n\n(Para OCR inteligente via IA, por favor carregue o arquivo novamente nesta sessão de administração).`;
+          setDocumentsList(newDocs);
+        }
+      }
+    } catch (err: any) {
+      alert(`Erro ao extrair dados por IA: ${err.message || err}`);
+    } finally {
+      setIsExtractingOcr(prev => ({ ...prev, [id]: false }));
     }
   };
 
@@ -347,7 +423,7 @@ export function CrmAdmin() {
                   key={s.id}
                   onClick={() => setSelectedSession(s)}
                   className={`w-full text-left p-4 transition-all duration-200 focus:outline-none flex flex-col gap-2 hover:bg-slate-100/60 dark:hover:bg-slate-800/40 cursor-pointer ${
-                    isSelected ? 'bg-white dark:bg-slate-805 shadow-inner border-l-2 border-blue-600' : ''
+                    isSelected ? 'bg-white dark:bg-slate-800 shadow-inner border-l-2 border-blue-600' : ''
                   }`}
                 >
                   <div className="flex justify-between items-start w-full">
@@ -421,7 +497,7 @@ export function CrmAdmin() {
                   if (isSystem) {
                     return (
                       <div key={msg.id || i} className="flex justify-center my-2 select-none">
-                        <span className="px-4 py-1.5 bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 rounded-full text-[9px] font-mono uppercase tracking-wider text-center max-w-md border border-slate-250/20 dark:border-transparent">
+                        <span className="px-4 py-1.5 bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 rounded-full text-[9px] font-mono uppercase tracking-wider text-center max-w-md border border-slate-300/20 dark:border-transparent">
                           {msg.content}
                         </span>
                       </div>
@@ -452,7 +528,7 @@ export function CrmAdmin() {
                         <div className={`p-3.5 rounded-2xl text-[11px] leading-relaxed shadow-sm font-normal ${
                           isUser 
                             ? 'bg-slate-800 text-white rounded-tr-none' 
-                            : 'bg-white dark:bg-slate-850 border border-[#ECECF2] dark:border-slate-800 text-slate-800 dark:text-slate-200 rounded-tl-none'
+                            : 'bg-white dark:bg-slate-800 border border-[#ECECF2] dark:border-slate-800 text-slate-800 dark:text-slate-200 rounded-tl-none'
                         }`}>
                           <p className="whitespace-pre-wrap">{msg.content}</p>
                         </div>
@@ -745,18 +821,25 @@ export function CrmAdmin() {
                 <div className="flex items-center justify-between border-b border-[#ECECF2] dark:border-slate-800 pb-3">
                   <h2 className="font-bold text-sm text-slate-800 dark:text-slate-200 uppercase tracking-wider">Documentos Digitalizados (OCR)</h2>
                   <button 
-                    onClick={addDocument} 
+                    onClick={triggerFileSelect} 
                     className="text-xs font-bold text-[#5E81F4] hover:text-[#5E81F4]/80 transition-colors cursor-pointer"
                   >
                     Anexar Documento
                   </button>
+                  <input 
+                    type="file"
+                    ref={fileInputRef}
+                    onChange={handleFileChange}
+                    accept=".pdf,image/*"
+                    className="hidden"
+                  />
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   {documentsList.map((d, idx) => (
                     <div 
                       key={d.id} 
-                      className="p-5 bg-[#F6F6F6] dark:bg-slate-850 rounded-lg border border-[#ECECF2] dark:border-slate-800 relative group flex flex-col justify-between gap-4"
+                      className="p-5 bg-[#F6F6F6] dark:bg-slate-800 rounded-lg border border-[#ECECF2] dark:border-slate-800 relative group flex flex-col justify-between gap-4 animate-fadeIn"
                     >
                       <button 
                         onClick={() => removeDocument(d.id)} 
@@ -776,7 +859,7 @@ export function CrmAdmin() {
                               newDocs[idx].type = e.target.value;
                               setDocumentsList(newDocs);
                             }} 
-                            className="bg-white dark:bg-slate-900 border border-[#ECECF2] dark:border-slate-800 rounded-lg px-2.5 py-1.5 text-xs text-slate-700 dark:text-slate-350 font-bold outline-none cursor-pointer"
+                            className="bg-white dark:bg-slate-900 border border-[#ECECF2] dark:border-slate-800 rounded-lg px-2.5 py-1.5 text-xs text-slate-700 dark:text-slate-300 font-bold outline-none cursor-pointer"
                           >
                             <option value="CNH">CNH (Motorista)</option>
                             <option value="CRLV">CRLV (Veículo)</option>
@@ -789,24 +872,33 @@ export function CrmAdmin() {
 
                         <div className="space-y-1">
                           <label className="text-[10px] font-bold text-[#8181A5] uppercase tracking-wider block">Dados Extraídos (OCR)</label>
-                          <p className="text-[11px] text-slate-700 dark:text-slate-300 font-bold leading-normal bg-white dark:bg-slate-900 p-2.5 rounded border border-[#ECECF2] dark:border-slate-800 min-h-[36px]">
-                            {d.extractedData || <span className="text-[#8181A5] font-normal italic">Dados não extraídos. Clique no botão abaixo para processar.</span>}
-                          </p>
+                          <textarea 
+                            value={d.extractedData || ''} 
+                            onChange={e => {
+                              const newDocs = [...documentsList];
+                              newDocs[idx].extractedData = e.target.value;
+                              setDocumentsList(newDocs);
+                            }} 
+                            rows={3}
+                            placeholder="Dados extraídos do documento..."
+                            className="w-full p-2.5 bg-white dark:bg-slate-900 border border-[#ECECF2] dark:border-slate-800 rounded text-[11px] text-slate-700 dark:text-slate-300 font-semibold outline-none focus:border-[#5E81F4] resize-y"
+                          />
                         </div>
                       </div>
 
                       <button
                         onClick={() => extractDataFromDoc(d.id)}
-                        className="w-full py-2 bg-slate-900 dark:bg-slate-850 hover:bg-slate-800 text-white rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all duration-200 shadow-sm cursor-pointer"
+                        disabled={isExtractingOcr[d.id]}
+                        className="w-full py-2 bg-slate-900 dark:bg-slate-800 hover:bg-slate-800 text-white rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all duration-200 shadow-sm cursor-pointer disabled:opacity-50"
                       >
-                        Simular OCR Inteligente
+                        {isExtractingOcr[d.id] ? 'Extraindo dados...' : 'Gerar OCR por IA'}
                       </button>
                     </div>
                   ))}
 
                   {documentsList.length === 0 && (
                     <div className="col-span-2 text-center py-8 border border-dashed border-[#ECECF2] dark:border-slate-800 rounded-lg bg-[#F6F6F6]/30 dark:bg-transparent">
-                      <p className="text-xs text-[#8181A5] dark:text-slate-500 italic">Nenhum documento digitalizado. Anexe arquivos acima para simular a extração OCR.</p>
+                      <p className="text-xs text-[#8181A5] dark:text-slate-500 italic">Nenhum documento digitalizado. Anexe arquivos acima para realizar a extração OCR.</p>
                     </div>
                   )}
                 </div>
@@ -823,9 +915,10 @@ export function CrmAdmin() {
                   <h2 className="font-bold text-sm text-slate-800 dark:text-slate-200 uppercase tracking-wider">Resumo Omnichannel AI</h2>
                   <button 
                     onClick={generateAiSummary} 
-                    className="px-4 py-2 bg-white hover:bg-[#F6F6F6] text-[#9698D6] rounded-lg text-xs font-bold transition-all border border-[#ECECF2] cursor-pointer"
+                    disabled={isGeneratingSummary}
+                    className="px-4 py-2 bg-white dark:bg-slate-800 hover:bg-[#F6F6F6] dark:hover:bg-slate-700 text-[#9698D6] dark:text-purple-300 rounded-lg text-xs font-bold transition-all border border-[#ECECF2] dark:border-slate-700 cursor-pointer disabled:opacity-50"
                   >
-                    Consolidar Histórico
+                    {isGeneratingSummary ? 'Consolidando...' : 'Consolidar Histórico'}
                   </button>
                 </div>
 
@@ -839,7 +932,7 @@ export function CrmAdmin() {
                     onChange={e => setAiSummary(e.target.value)} 
                     rows={5} 
                     placeholder="Cole ou gere o resumo analítico da IA aqui..." 
-                    className="w-full px-4 py-3 bg-[#F6F6F6] dark:bg-slate-950 border border-[#ECECF2] dark:border-slate-800 rounded-lg text-xs outline-none focus:border-[#5E81F4] text-slate-700 dark:text-slate-350 transition-all leading-relaxed font-bold"
+                    className="w-full px-4 py-3 bg-[#F6F6F6] dark:bg-slate-950 border border-[#ECECF2] dark:border-slate-800 rounded-lg text-xs outline-none focus:border-[#5E81F4] text-slate-700 dark:text-slate-300 transition-all leading-relaxed font-bold"
                   />
                 </div>
               </section>
@@ -880,7 +973,7 @@ export function CrmAdmin() {
                               newPolicies[idx].type = e.target.value;
                               setDetailedPolicies(newPolicies);
                             }} 
-                            className="bg-white dark:bg-slate-900 border border-[#ECECF2] dark:border-slate-800 rounded-lg px-2.5 py-1.5 text-xs text-slate-700 dark:text-slate-350 font-bold outline-none cursor-pointer"
+                            className="bg-white dark:bg-slate-900 border border-[#ECECF2] dark:border-slate-800 rounded-lg px-2.5 py-1.5 text-xs text-slate-700 dark:text-slate-300 font-bold outline-none cursor-pointer"
                           >
                             <option value="Auto">Auto (Automotivo)</option>
                             <option value="Vida">Vida (Pessoas)</option>
@@ -946,7 +1039,7 @@ export function CrmAdmin() {
                               newPolicies[idx].expirationDate = e.target.value;
                               setDetailedPolicies(newPolicies);
                             }} 
-                            className="w-full px-2.5 py-1.5 bg-white dark:bg-slate-900 border border-[#ECECF2] dark:border-slate-800 rounded-lg text-xs outline-none text-slate-850 dark:text-slate-250 font-semibold cursor-pointer" 
+                            className="w-full px-2.5 py-1.5 bg-white dark:bg-slate-900 border border-[#ECECF2] dark:border-slate-800 rounded-lg text-xs outline-none text-slate-700 dark:text-slate-300 font-semibold cursor-pointer" 
                           />
                         </div>
                       </div>
@@ -985,18 +1078,46 @@ export function CrmAdmin() {
                         Excluir
                       </button>
                       
-                      <div className="space-y-2">
-                        <label className="text-[10px] font-bold text-[#8181A5] uppercase tracking-wider block">Descrição do Evento</label>
-                        <input 
-                          value={c.description} 
-                          onChange={e => {
-                            const newClaims = [...claimsList];
-                            newClaims[idx].description = e.target.value;
-                            setClaimsList(newClaims);
-                          }} 
-                          className="w-full px-3 py-2 bg-white dark:bg-slate-900 border border-[#ECECF2] dark:border-slate-800 rounded-lg text-xs outline-none text-slate-800 dark:text-slate-200 font-bold" 
-                          placeholder="Ex: Colisão traseira na rodovia" 
-                        />
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                          <label className="text-[10px] font-bold text-[#8181A5] uppercase tracking-wider block">Apólice Vinculada</label>
+                          {detailedPolicies.length === 0 ? (
+                            <div className="w-full px-3 py-2 bg-rose-500/5 dark:bg-rose-500/10 border border-rose-200 dark:border-rose-900/30 rounded-lg text-[10px] text-[#FF808B] font-bold uppercase tracking-wider">
+                              Nenhuma Apólice Cadastrada
+                            </div>
+                          ) : (
+                            <select
+                              value={c.policyId}
+                              onChange={e => {
+                                const newClaims = [...claimsList];
+                                newClaims[idx].policyId = e.target.value;
+                                setClaimsList(newClaims);
+                              }}
+                              className="w-full px-3 py-2 bg-white dark:bg-slate-900 border border-[#ECECF2] dark:border-slate-800 rounded-lg text-xs outline-none text-slate-800 dark:text-slate-200 font-bold cursor-pointer"
+                            >
+                              <option value="sem-apolice">Sem vínculo específico</option>
+                              {detailedPolicies.map(p => (
+                                <option key={p.id} value={p.id}>
+                                  {p.type} - {p.assetDescription || 'Sem Descrição'} ({p.coverageLimits || 'Sem Limite'})
+                                </option>
+                              ))}
+                            </select>
+                          )}
+                        </div>
+
+                        <div className="space-y-2">
+                          <label className="text-[10px] font-bold text-[#8181A5] uppercase tracking-wider block">Descrição do Evento</label>
+                          <input 
+                            value={c.description} 
+                            onChange={e => {
+                              const newClaims = [...claimsList];
+                              newClaims[idx].description = e.target.value;
+                              setClaimsList(newClaims);
+                            }} 
+                            className="w-full px-3 py-2 bg-white dark:bg-slate-900 border border-[#ECECF2] dark:border-slate-800 rounded-lg text-xs outline-none text-slate-800 dark:text-slate-200 font-bold" 
+                            placeholder="Ex: Colisão traseira na rodovia" 
+                          />
+                        </div>
                       </div>
 
                       <div className="flex flex-col gap-2">
@@ -1004,7 +1125,7 @@ export function CrmAdmin() {
                         <div className="flex flex-wrap gap-1.5">
                           {claimStatuses.map(st => {
                             const isSelected = c.status === st.value;
-                            let activeClass = 'bg-[#ECECF2] text-slate-700';
+                            let activeClass = 'bg-[#ECECF2] text-slate-700 dark:bg-slate-800 dark:text-slate-300';
                             if (isSelected) {
                               if (st.value === 'aberto' || st.value === 'em_analise' || st.value === 'vistoria') {
                                 activeClass = 'bg-[#F4BE5E] text-white shadow-sm';
@@ -1027,7 +1148,7 @@ export function CrmAdmin() {
                                 className={`px-3 py-1.5 rounded-lg text-[9px] font-bold uppercase transition-all duration-200 cursor-pointer ${
                                   isSelected
                                     ? activeClass
-                                    : 'bg-white dark:bg-slate-900 text-[#8181A5] border border-[#ECECF2] dark:border-slate-800 hover:bg-[#F6F6F6]'
+                                    : 'bg-white dark:bg-slate-900 text-[#8181A5] border border-[#ECECF2] dark:border-slate-800 hover:bg-[#F6F6F6] dark:hover:bg-slate-800'
                                 }`}
                               >
                                 {st.label}
@@ -1108,7 +1229,7 @@ export function CrmAdmin() {
                                 className={`px-2.5 py-1.5 rounded-lg text-[9px] font-bold uppercase tracking-wider transition-all cursor-pointer ${
                                   isSelected
                                     ? activeClass
-                                    : 'bg-white dark:bg-slate-900 text-[#8181A5] border border-[#ECECF2] dark:border-slate-800 hover:bg-[#F6F6F6]'
+                                    : 'bg-white dark:bg-slate-900 text-[#8181A5] border border-[#ECECF2] dark:border-slate-800 hover:bg-[#F6F6F6] dark:hover:bg-slate-800'
                                 }`}
                               >
                                 {st === 'em_andamento' ? 'Fila' : st}

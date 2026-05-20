@@ -121,16 +121,20 @@ Pergunta: ${lastMessage.content}`;
     return { finalResponse: response };
   };
 
-  // Nó de Atendimento Geral (Usa OLLAMA LOCAL - Gemma 4)
+  // Nó de Atendimento Geral (Usa OLLAMA LOCAL)
   const generalNode = async (state: typeof SeguraBotState.State) => {
     const lastMessage = state.messages[state.messages.length - 1];
     
+    const selectedModel = (typeof window !== 'undefined' && typeof localStorage !== 'undefined')
+      ? localStorage.getItem('ollama_model') || 'llama3'
+      : 'llama3';
+
     try {
       const response = await fetch("http://localhost:11434/api/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          model: "gemma4:latest",
+          model: selectedModel,
           prompt: `Você é o SeguraBot, um assistente geral de seguros. Responda amigavelmente à seguinte mensagem, sem usar nenhum emoji: ${lastMessage.content}`,
           stream: false
         })

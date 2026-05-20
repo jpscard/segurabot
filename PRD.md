@@ -4,8 +4,8 @@
 O **SeguraBot** é uma plataforma de assistente virtual baseada em Inteligência Artificial, construída com foco em segurança, manutenibilidade e um design premium. A aplicação utiliza uma abordagem de IA híbrida (integrando o Google Gemini e suporte opcional para modelos locais como Ollama) aliada a um banco de dados em tempo real (Firebase) para a gestão do histórico e autenticação.
 
 ## 2. Equipe e Informações do Projeto
-*   **Membros da Equipe:** João Paulo da Silva Cardoso e Leonardo Pereira
-*   **Repositório Oficial:** [GitHub - segurabot](https://github.com/jpscard/segurabot)
+*   **Membros da Equipe:** Felipe Rafael dos Santos Barbosa, João Paulo da Silva Cardoso e Victor Amazonas Viegas Ferreira
+*   **Repositório Oficial:** [GitHub - uci_ai](https://github.com/jpscard/uci_ai/tree/main)
 
 ## 3. Objetivos do Produto
 *   Prover uma interface de chat inteligente e segura para os usuários finais.

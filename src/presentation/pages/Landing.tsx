@@ -75,6 +75,8 @@ export function Landing() {
             <a href="#recursos" className="text-sm font-bold text-[#8181A5] hover:text-slate-900 dark:hover:text-white transition-colors uppercase tracking-wider">Recursos</a>
             <a href="#solucoes" className="text-sm font-bold text-[#8181A5] hover:text-slate-900 dark:hover:text-white transition-colors uppercase tracking-wider">Soluções</a>
             <a href="#metricas" className="text-sm font-bold text-[#8181A5] hover:text-slate-900 dark:hover:text-white transition-colors uppercase tracking-wider">Resultados</a>
+            <a href="#equipe" className="text-sm font-bold text-[#8181A5] hover:text-slate-900 dark:hover:text-white transition-colors uppercase tracking-wider">Equipe</a>
+            <a href="#contato" className="text-sm font-bold text-[#8181A5] hover:text-slate-900 dark:hover:text-white transition-colors uppercase tracking-wider">Contato</a>
           </nav>
 
           {/* CTA & Theme Toggle */}
@@ -141,7 +143,7 @@ export function Landing() {
           Reduza o tempo de espera e qualifique leads em tempo real.
         </p>
 
-        <div className="animate-fade-in-up delay-300 flex justify-center gap-4 mb-24">
+        <div className="animate-fade-in-up delay-300 flex justify-center gap-4">
           <button
             onClick={() => {
               const event = new CustomEvent('openChatWidget');
@@ -159,30 +161,50 @@ export function Landing() {
             Falar com Especialista
           </button>
         </div>
+      </main>
 
-        {/* Stats Bar */}
-        <div id="metricas" className="animate-fade-in-up delay-400 grid grid-cols-2 md:grid-cols-4 gap-4 max-w-4xl mx-auto mb-24 scroll-mt-20">
-          <div className="bg-white dark:bg-slate-900 p-6 rounded-xl border border-[#ECECF2] dark:border-slate-800 card-hover">
+      {/* Resultados Section */}
+      <section id="metricas" className="relative z-10 max-w-6xl mx-auto px-6 pb-24 scroll-mt-20">
+        <div className="text-center mb-12">
+          <p className="text-xs font-bold text-[#5E81F4] uppercase tracking-widest mb-3">Resultados</p>
+          <h2 className="text-3xl font-black text-slate-900 dark:text-white tracking-tight">Métricas de impacto real</h2>
+          <p className="text-sm text-[#8181A5] max-w-xl mx-auto mt-2 leading-relaxed font-normal">
+            Resultados consolidados que comprovam a eficiência da nossa tecnologia no atendimento diário.
+          </p>
+        </div>
+        
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 max-w-4xl mx-auto">
+          <div className="bg-white dark:bg-slate-900 p-6 rounded-xl border border-[#ECECF2] dark:border-slate-800 card-hover text-center">
             <p className="text-3xl font-black text-[#5E81F4] tabular-nums">{statAtendimentos.toLocaleString('pt-BR')}+</p>
             <p className="text-xs font-bold text-[#8181A5] uppercase tracking-wider mt-2">Atendimentos</p>
           </div>
-          <div className="bg-white dark:bg-slate-900 p-6 rounded-xl border border-[#ECECF2] dark:border-slate-800 card-hover">
+          <div className="bg-white dark:bg-slate-900 p-6 rounded-xl border border-[#ECECF2] dark:border-slate-800 card-hover text-center">
             <p className="text-3xl font-black text-[#7CE7AC] tabular-nums">{statReducao}%</p>
             <p className="text-xs font-bold text-[#8181A5] uppercase tracking-wider mt-2">Redução de Espera</p>
           </div>
-          <div className="bg-white dark:bg-slate-900 p-6 rounded-xl border border-[#ECECF2] dark:border-slate-800 card-hover">
+          <div className="bg-white dark:bg-slate-900 p-6 rounded-xl border border-[#ECECF2] dark:border-slate-800 card-hover text-center">
             <p className="text-3xl font-black text-[#9698D6] tabular-nums">{statSatisfacao}%</p>
             <p className="text-xs font-bold text-[#8181A5] uppercase tracking-wider mt-2">Satisfação</p>
           </div>
-          <div className="bg-white dark:bg-slate-900 p-6 rounded-xl border border-[#ECECF2] dark:border-slate-800 card-hover">
+          <div className="bg-white dark:bg-slate-900 p-6 rounded-xl border border-[#ECECF2] dark:border-slate-800 card-hover text-center">
             <p className="text-3xl font-black text-[#40E1FA] tabular-nums">{statUptime}.9%</p>
             <p className="text-xs font-bold text-[#8181A5] uppercase tracking-wider mt-2">Uptime</p>
           </div>
         </div>
+      </section>
 
-        {/* Features Grid */}
-        <div id="recursos" className="grid grid-cols-1 md:grid-cols-3 gap-6 text-left scroll-mt-20">
-          <div className="animate-fade-in-up delay-400 bg-white dark:bg-slate-900 border border-[#ECECF2] dark:border-slate-800 p-8 rounded-xl card-hover group">
+      {/* Recursos Section */}
+      <section id="recursos" className="relative z-10 max-w-6xl mx-auto px-6 pb-24 scroll-mt-20">
+        <div className="text-center mb-12">
+          <p className="text-xs font-bold text-[#5E81F4] uppercase tracking-widest mb-3">Recursos</p>
+          <h2 className="text-3xl font-black text-slate-900 dark:text-white tracking-tight">Tecnologia avançada para automação</h2>
+          <p className="text-sm text-[#8181A5] max-w-xl mx-auto mt-2 leading-relaxed font-normal">
+            Conheça os pilares que tornam o SeguraBot a solução de IA mais segura e robusta para o mercado de seguros.
+          </p>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 text-left">
+          <div className="bg-white dark:bg-slate-900 border border-[#ECECF2] dark:border-slate-800 p-8 rounded-xl card-hover group">
             <div className="w-12 h-12 rounded-xl bg-[#5E81F4]/10 dark:bg-[#5E81F4]/5 flex items-center justify-center text-[#5E81F4] mb-5 group-hover:scale-110 transition-transform duration-300">
               <Shield className="w-6 h-6" />
             </div>
@@ -193,7 +215,7 @@ export function Landing() {
             </p>
           </div>
 
-          <div className="animate-fade-in-up delay-500 bg-white dark:bg-slate-900 border border-[#ECECF2] dark:border-slate-800 p-8 rounded-xl card-hover group">
+          <div className="bg-white dark:bg-slate-900 border border-[#ECECF2] dark:border-slate-800 p-8 rounded-xl card-hover group">
             <div className="w-12 h-12 rounded-xl bg-[#9698D6]/10 dark:bg-[#9698D6]/5 flex items-center justify-center text-[#9698D6] mb-5 group-hover:scale-110 transition-transform duration-300">
               <Users className="w-6 h-6" />
             </div>
@@ -204,7 +226,7 @@ export function Landing() {
             </p>
           </div>
 
-          <div className="animate-fade-in-up delay-600 bg-white dark:bg-slate-900 border border-[#ECECF2] dark:border-slate-800 p-8 rounded-xl card-hover group">
+          <div className="bg-white dark:bg-slate-900 border border-[#ECECF2] dark:border-slate-800 p-8 rounded-xl card-hover group">
             <div className="w-12 h-12 rounded-xl bg-[#7CE7AC]/10 dark:bg-[#7CE7AC]/5 flex items-center justify-center text-[#7CE7AC] mb-5 group-hover:scale-110 transition-transform duration-300">
               <Zap className="w-6 h-6" />
             </div>
@@ -215,7 +237,7 @@ export function Landing() {
             </p>
           </div>
         </div>
-      </main>
+      </section>
 
       {/* Soluções Section */}
       <section id="solucoes" className="relative z-10 max-w-6xl mx-auto px-6 pb-24 scroll-mt-20">
@@ -292,51 +314,107 @@ export function Landing() {
         </div>
       </section>
 
-      {/* Team & Contact Section */}
-      <section className="relative z-10 max-w-6xl mx-auto px-6 pb-24">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-12">
-          {/* Developers */}
-          <div>
-            <p className="text-xs font-bold text-[#5E81F4] uppercase tracking-widest mb-2">Equipe</p>
-            <h2 className="text-2xl font-black mb-6 text-slate-900 dark:text-white tracking-tight">Desenvolvedores</h2>
-            <div className="space-y-3">
-              {[
-                { initials: 'JP', name: 'João Paulo da Silva Cardoso' },
-                { initials: 'LA', name: 'Leonardo Alves Pereira' },
-              ].map(dev => (
-                <div key={dev.initials} className="flex items-center gap-4 p-3 bg-white dark:bg-slate-900 rounded-xl border border-[#ECECF2] dark:border-slate-800 card-hover">
-                  <div className="w-10 h-10 bg-[#5E81F4]/10 dark:bg-[#5E81F4]/5 rounded-xl flex items-center justify-center text-[#5E81F4] font-bold text-sm shrink-0">
-                    {dev.initials}
-                  </div>
-                  <div>
-                    <div className="text-sm font-bold text-slate-900 dark:text-white">{dev.name}</div>
-                    <div className="text-[10px] font-bold text-[#8181A5] uppercase tracking-wider">Desenvolvedor</div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
+      {/* Developers Spotlight Section */}
+      <section id="equipe" className="relative z-10 max-w-6xl mx-auto px-6 pb-24 scroll-mt-20">
+        <div className="text-center mb-12">
+          <p className="text-xs font-bold text-[#5E81F4] uppercase tracking-widest mb-3">Engenharia</p>
+          <h2 className="text-3xl font-black text-slate-900 dark:text-white tracking-tight">Desenvolvedores do Projeto</h2>
+          <p className="text-sm text-[#8181A5] max-w-xl mx-auto mt-2 leading-relaxed font-normal">
+            Os engenheiros por trás da inteligência de negócios, RAG e arquitetura de multiagentes do SeguraBot.
+          </p>
+        </div>
 
-          {/* Contact */}
-          <div>
-            <p className="text-xs font-bold text-[#5E81F4] uppercase tracking-widest mb-2">Contato</p>
-            <h2 className="text-2xl font-black mb-6 text-slate-900 dark:text-white tracking-tight">Fale Conosco</h2>
-            <div className="bg-white dark:bg-slate-900 p-6 rounded-xl border border-[#ECECF2] dark:border-slate-800 space-y-4">
-              <p className="text-sm text-[#8181A5] leading-relaxed font-normal">
-                Dúvidas ou sugestões? Entre em contato com a nossa equipe.
-              </p>
-              <div className="space-y-3">
-                <div className="flex items-center gap-3 p-3 bg-[#F6F6F6] dark:bg-slate-800 rounded-lg">
-                  <span className="text-xs font-bold text-[#8181A5] uppercase tracking-wider shrink-0">Email</span>
-                  <a href="mailto:contato@segurabot.com.br" className="text-sm font-bold text-[#5E81F4] hover:text-[#5E81F4]/80 transition-colors">contato@segurabot.com.br</a>
-                </div>
-                <div className="flex items-center gap-3 p-3 bg-[#F6F6F6] dark:bg-slate-800 rounded-lg">
-                  <span className="text-xs font-bold text-[#8181A5] uppercase tracking-wider shrink-0">GitHub</span>
-                  <a href="https://github.com/jpscard/uci_ai/tree/main" target="_blank" rel="noopener noreferrer" className="text-sm font-bold text-[#5E81F4] hover:text-[#5E81F4]/80 transition-colors">Repositório do Projeto</a>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-8 max-w-4xl mx-auto">
+          {[
+            { 
+              initials: 'JP', 
+              name: 'João Paulo da Silva Cardoso', 
+              role: 'Fullstack & AI Architecture', 
+              image: '/images/joao.jpg',
+              description: 'Especialista em orquestração de grafos multiagentes com LangGraph, subscrições Firebase reativas em tempo real e segurança de dados.' 
+            },
+            { 
+              initials: 'LA', 
+              name: 'Leonardo Alves Pereira', 
+              role: 'AI Service & Systems Integration', 
+              image: '/images/leonardo.png',
+              description: 'Especialista em integrações generativas avançadas com Gemini, processamento inteligente de OCR e comunicação com sistemas de seguros legados.' 
+            },
+          ].map(dev => (
+            <div key={dev.initials} className="flex flex-col sm:flex-row items-center gap-6 p-6 bg-white dark:bg-slate-900 rounded-2xl border border-[#ECECF2] dark:border-slate-800 card-hover group relative overflow-hidden">
+              {/* Profile Image with subtle scale-on-hover */}
+              <div className="relative w-24 h-24 sm:w-28 sm:h-28 rounded-2xl overflow-hidden shrink-0 border border-[#ECECF2] dark:border-slate-800 shadow-sm bg-[#5E81F4]/5 flex items-center justify-center">
+                {dev.image ? (
+                  <img 
+                    src={dev.image} 
+                    alt={dev.name}
+                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500 ease-out"
+                    onError={(e) => {
+                      e.currentTarget.style.display = 'none';
+                      const fallback = e.currentTarget.nextElementSibling as HTMLElement;
+                      if (fallback) fallback.style.display = 'flex';
+                    }}
+                  />
+                ) : null}
+                <div 
+                  className="absolute inset-0 bg-[#5E81F4]/10 dark:bg-[#5E81F4]/5 flex items-center justify-center text-[#5E81F4] font-bold text-xl"
+                  style={{ display: dev.image ? 'none' : 'flex' }}
+                >
+                  {dev.initials}
                 </div>
               </div>
+
+              {/* Developer Details */}
+              <div className="flex-1 text-center sm:text-left space-y-2">
+                <span className="inline-block px-2.5 py-1 bg-[#5E81F4]/10 dark:bg-[#5E81F4]/5 text-[#5E81F4] text-[10px] font-bold uppercase tracking-wider rounded-md">
+                  {dev.role}
+                </span>
+                <h3 className="text-lg font-black text-slate-900 dark:text-white leading-tight">
+                  {dev.name}
+                </h3>
+                <p className="text-xs text-[#8181A5] leading-relaxed font-normal">
+                  {dev.description}
+                </p>
+              </div>
             </div>
-          </div>
+          ))}
+        </div>
+      </section>
+
+      {/* Contact Section */}
+      <section id="contato" className="relative z-10 max-w-6xl mx-auto px-6 pb-24 scroll-mt-20">
+        <div className="text-center mb-12">
+          <p className="text-xs font-bold text-[#5E81F4] uppercase tracking-widest mb-3">Contato</p>
+          <h2 className="text-3xl font-black text-slate-900 dark:text-white tracking-tight">Fale Conosco</h2>
+          <p className="text-sm text-[#8181A5] max-w-xl mx-auto mt-2 leading-relaxed font-normal">
+            Dúvidas, sugestões ou suporte técnico? Nossa equipe está de prontidão para ajudar.
+          </p>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 max-w-4xl mx-auto">
+          <a 
+            href="mailto:contato@segurabot.com.br" 
+            className="flex items-center justify-between p-6 bg-white dark:bg-slate-900 rounded-xl border border-[#ECECF2] dark:border-slate-800 card-hover hover:border-[#5E81F4]/40 dark:hover:border-[#5E81F4]/40 transition-all group"
+          >
+            <div className="text-left space-y-1.5">
+              <p className="text-[10px] font-bold text-[#8181A5] uppercase tracking-wider">Email Comercial</p>
+              <p className="text-base font-bold text-[#5E81F4] break-all">contato@segurabot.com.br</p>
+            </div>
+            <ChevronRight className="w-5 h-5 text-[#8181A5] group-hover:text-[#5E81F4] group-hover:translate-x-1 transition-all shrink-0" />
+          </a>
+          
+          <a 
+            href="https://github.com/jpscard/uci_ai/tree/main" 
+            target="_blank" 
+            rel="noopener noreferrer" 
+            className="flex items-center justify-between p-6 bg-white dark:bg-slate-900 rounded-xl border border-[#ECECF2] dark:border-slate-800 card-hover hover:border-[#5E81F4]/40 dark:hover:border-[#5E81F4]/40 transition-all group"
+          >
+            <div className="text-left space-y-1.5">
+              <p className="text-[10px] font-bold text-[#8181A5] uppercase tracking-wider">Código Fonte</p>
+              <p className="text-base font-bold text-[#5E81F4]">Repositório GitHub</p>
+            </div>
+            <ChevronRight className="w-5 h-5 text-[#8181A5] group-hover:text-[#5E81F4] group-hover:translate-x-1 transition-all shrink-0" />
+          </a>
         </div>
       </section>
 

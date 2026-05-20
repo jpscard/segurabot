@@ -16,21 +16,24 @@ O **SeguraBot** é uma plataforma de assistente virtual baseada em Inteligência
 * **Navegação e Controles:** Navegação através de botões estilizados.
 * **Estética Visual:** Suporte a temas Claro e Escuro (Light e Dark modes).
 
----
+## Demonstração Visual (Telas Reais do Sistema)
 
-## Demonstração Visual (Mockups Premium)
+Abaixo estão capturas de tela reais da nossa aplicação em pleno funcionamento, desenvolvida sob a premissa de minimalismo absoluto (sem emojis ou ícones nos elementos visuais) e navegação baseada em botões estilizados:
 
-Abaixo estão capturas de tela conceituais da interface premium da plataforma, projetada sob a premissa de minimalismo absoluto (sem emojis ou ícones nos elementos visuais) e navegação baseada em botões estilizados:
+### 1. Página de Destino (Landing Page)
+Página inicial do **SeguraBot** apresentando os recursos, resultados operacionais da plataforma, arquitetura de confiança zero e informações sobre a equipe de desenvolvedores.
 
-### 1. Painel de Chat do Cliente (Dark Mode)
-Uma interface de chat moderna e fluida com efeito *glassmorphism*, focada em clareza e legibilidade absoluta para o segurado interagir com a IA.
+![SeguraBot Landing Page](assets/real_landing.png)
 
-![SeguraBot Chat Dashboard](assets/dashboard_chat_mockup.png)
+### 2. Painel de Chat do Cliente (Dashboard)
+Uma interface de chat moderna, limpa e focada em legibilidade absoluta, onde o segurado pode interagir com o assistente de IA, analisar apólices e tirar dúvidas de seguros em tempo real.
 
-### 2. Painel Administrativo de CRM (Grid Premium)
-Um painel administrativo robusto e limpo para corretores de seguros, exibindo de forma estruturada as apólices, sinistros recentes e as interações do assistente de IA.
+![SeguraBot Chat Dashboard](assets/real_dashboard.png)
 
-![SeguraBot CRM Admin](assets/crm_admin_mockup.png)
+### 3. Painel Administrativo de CRM (Simulador Omnichannel)
+Painel de controle robusto para corretores de seguros gerenciarem os dados de cadastro dos segurados, contratos ativos (apólices), histórico de sinistros, resumos omnichannel criados por IA e treinar a base de conhecimento (RAG).
+
+![SeguraBot CRM Admin](assets/real_crm.png)
 
 ## Engenharia de Software e Arquitetura
 

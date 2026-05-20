@@ -1,6 +1,7 @@
 import { collection, setDoc, doc } from 'firebase/firestore';
-import { db } from '../api/firebase';
-import { extractFAQsFromPDF } from '../api/gemini';
+import { db } from '../infrastructure/firebase';
+import { extractFAQsFromPDF } from '../infrastructure/gemini';
+import { GeminiEmbeddingService } from '../infrastructure/GeminiEmbeddingService';
 
 export async function uploadRealDataToKnowledgeBase(file: File): Promise<number> {
   return new Promise((resolve, reject) => {
@@ -55,16 +56,26 @@ export async function uploadRealDataToKnowledgeBase(file: File): Promise<number>
 
         const kbRef = collection(db, 'knowledge_base');
         let count = 0;
+        const embeddingService = new GeminiEmbeddingService();
 
         for (const item of dataToUpload) {
           if (!item.question || !item.answer) continue;
 
           const newDocRef = doc(kbRef);
+          
+          let embedding: number[] | null = null;
+          try {
+            embedding = await embeddingService.generateEmbedding(item.question);
+          } catch (e) {
+            console.warn("Não foi possível gerar embedding para a pergunta:", item.question, e);
+          }
+
           await setDoc(newDocRef, {
             category: item.category || 'Geral',
             question: item.question,
             answer: item.answer,
-            source: item.source || file.name
+            source: item.source || file.name,
+            embedding: embedding
           });
           count++;
         }

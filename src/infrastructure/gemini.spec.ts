@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { askSeguraBot } from './gemini';
-import { Role } from '../types';
+import { Role } from '../domain';
 
 // Mock the environment variable
 vi.stubEnv('VITE_GEMINI_API_KEY', 'fake_key');
@@ -17,8 +17,29 @@ vi.mock('@google/genai', () => {
           yield { text: 'Esta é uma resposta ' };
           yield { text: 'simulada do Gemini ' };
           yield { text: 'sobre seguros.' };
+        }),
+        embedContent: vi.fn().mockResolvedValue({
+          embeddings: [{ values: new Array(768).fill(0.1) }]
         })
       };
+    }
+  };
+});
+
+// Mock Firebase repositories to prevent real Firestore network calls and permission errors during tests
+vi.mock('./FirebaseKnowledgeBaseRepository', () => {
+  return {
+    FirebaseKnowledgeBaseRepository: class {
+      searchRelevantContext = vi.fn().mockResolvedValue([]);
+    }
+  };
+});
+
+vi.mock('./FirebaseCustomerRepository', () => {
+  return {
+    FirebaseCustomerRepository: class {
+      getCustomerProfile = vi.fn().mockResolvedValue(null);
+      getSupportTickets = vi.fn().mockResolvedValue([]);
     }
   };
 });
@@ -29,7 +50,7 @@ describe('askSeguraBot (AI Service)', () => {
   });
 
   it('deve usar o Gemini por padrão e processar a resposta', async () => {
-    const messages = [{ id: '1', role: Role.USER, content: 'Como aciono meu seguro?', timestamp: Date.now() }];
+    const messages = [{ id: '1', role: Role.USER, content: 'Como aciono meu seguro?', timestamp: new Date().toISOString() }];
     const onChunk = vi.fn();
     
     const response = await askSeguraBot(messages, onChunk, 'gemini');
@@ -40,7 +61,7 @@ describe('askSeguraBot (AI Service)', () => {
   });
 
   it('deve usar o provedor Ollama e fazer o fetch corretamente', async () => {
-    const messages = [{ id: '1', role: Role.USER, content: 'O que a apólice cobre?', timestamp: Date.now() }];
+    const messages = [{ id: '1', role: Role.USER, content: 'O que a apólice cobre?', timestamp: new Date().toISOString() }];
     const onChunk = vi.fn();
     
     // Setup fetch mock for streaming response
@@ -72,7 +93,7 @@ describe('askSeguraBot (AI Service)', () => {
   });
 
   it('deve lidar com falhas do provedor Ollama corretamente', async () => {
-    const messages = [{ id: '1', role: Role.USER, content: 'Teste de erro', timestamp: Date.now() }];
+    const messages = [{ id: '1', role: Role.USER, content: 'Teste de erro', timestamp: new Date().toISOString() }];
     
     (global.fetch as any).mockResolvedValue({
       ok: false,

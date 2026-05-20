@@ -40,8 +40,8 @@ Como separamos as responsabilidades através de Contratos (Interfaces), podemos 
 
 ## Próximos Passos (Plano de Refatoração)
 
-4.  **Reestruturação de Pastas:** (Concluído) Migração de Clean Architecture profunda para uma arquitetura "Flat" simplificada (`api/`, `components/`, `context/`, `pages/`, `services/`, `types/`, `utils/`) para facilitar a manutenção.
-5.  **Refatorar o `Dashboard.tsx`:** (Concluído) Consumo de casos de uso (ex: `ProcessUserMessageUseCase`).
+4.  **Reestruturação de Pastas:** (Em andamento) Consolidar o código na estrutura estrita da Clean Architecture (`domain`, `application`, `infrastructure`, `presentation`), eliminando pastas legadas.
+5.  **Refatorar o `Dashboard.tsx`:** (Em andamento) O consumo de casos de uso para envio de mensagem (`ProcessUserMessageUseCase`) já foi implementado, mas ainda falta extrair as chamadas diretas de banco de dados (Firestore) para hooks/repositórios.
 
 ## 4. Pipeline de RAG e Ingestão de Conhecimento (Data Pipeline)
 Para suportar as funcionalidades inteligentes do assistente, a arquitetura incorpora um pipeline de RAG (Retrieval-Augmented Generation) dinâmico e flexível.

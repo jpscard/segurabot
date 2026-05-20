@@ -1,0 +1,38 @@
+[
+  {
+    "category": "Carência",
+    "question": "Qual o prazo de carência para consultas e exames simples?",
+    "answer": "O prazo de carência para consultas médicas de rotina e exames laboratoriais simples é de apenas 24 horas a partir da data de ativação do seu plano de saúde.",
+    "source": "Manual de Carências SeguraBot Saúde"
+  },
+  {
+    "category": "Reembolso",
+    "question": "Como funciona a solicitação de reembolso para médicos fora da rede?",
+    "answer": "Você pode solicitar o reembolso de consultas particulares anexando o recibo médico assinado ou nota fiscal digital diretamente no painel do cliente. O prazo de depósito é de até 30 dias úteis e o reembolso é calculado com base no limite padrão da tabela do seu plano Executivo.",
+    "source": "Manual de Reembolsos SeguraBot Saúde"
+  },
+  {
+    "category": "Coparticipação",
+    "question": "Qual o percentual de coparticipação em exames de alta complexidade?",
+    "answer": "Para exames de alta complexidade, como ressonâncias magnéticas e tomografias computadorizadas, a taxa de coparticipação é de 20%, com um valor máximo limitado ao teto de R$ 120,00 por procedimento, protegendo você contra custos excessivos.",
+    "source": "Tabela de Coparticipação SeguraBot Saúde"
+  },
+  {
+    "category": "Cobertura",
+    "question": "O plano de saúde cobre atendimento de urgência nacional?",
+    "answer": "Sim, o plano Executivo Saúde oferece Cobertura Nacional completa para situações de urgência e emergência médicas em qualquer hospital ou pronto-socorro da nossa rede credenciada espalhada por todo o território nacional.",
+    "source": "Termos de Cobertura Geográfica"
+  },
+  {
+    "category": "Dependentes",
+    "question": "Como faço para incluir um recém-nascido como dependente sem carência?",
+    "answer": "A inclusão de recém-nascidos deve ser realizada em até 30 dias corridos após o nascimento. Fazendo a solicitação dentro deste prazo regulamentar, o bebê é integrado ao plano imediatamente com isenção total de prazos de carência.",
+    "source": "Regulamento de Inclusão de Dependentes"
+  },
+  {
+    "category": "Internação",
+    "question": "O plano cobrirá internação em quarto particular ou enfermaria?",
+    "answer": "Seu plano Executivo de saúde garante cobertura integral para internações em quarto particular (apartamento) com direito a um acompanhante durante todo o período de hospitalização sem custos adicionais de diárias.",
+    "source": "Manual de Hospitalização SeguraBot Saúde"
+  }
+]

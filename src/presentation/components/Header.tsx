@@ -1,5 +1,5 @@
-import { auth, logout } from '../api/firebase';
-import { cn } from '../utils/utils';
+import { auth, logout } from '../../infrastructure/firebase';
+import { cn } from '../../utils/utils';
 import { useSettings } from '../context/SettingsContext';
 import { useTheme } from '../context/ThemeContext';
 
@@ -23,10 +23,28 @@ export function Header() {
         {/* Theme Toggle */}
         <div className="flex items-center bg-slate-100 dark:bg-slate-800 p-1 rounded-lg border border-slate-200 dark:border-slate-700 transition-colors">
           <button
-            onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
-            className="px-3 py-1 text-xs font-medium rounded-md transition-all text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100"
+            onClick={() => setTheme('light')}
+            className={cn(
+              "p-1.5 rounded-md transition-all",
+              theme === 'light' 
+                ? "bg-white dark:bg-slate-600 text-yellow-500 shadow-sm" 
+                : "text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-300"
+            )}
+            title="Modo Claro"
           >
-            {theme === 'dark' ? 'Light' : 'Dark'}
+            <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="M4.93 4.93l1.41 1.41"/><path d="M17.65 17.65l1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="M4.93 17.65l1.41-1.41"/><path d="M17.65 4.93l1.41-1.41"/></svg>
+          </button>
+          <button
+            onClick={() => setTheme('dark')}
+            className={cn(
+              "p-1.5 rounded-md transition-all",
+              theme === 'dark' 
+                ? "bg-white dark:bg-slate-600 text-blue-500 dark:text-blue-400 shadow-sm" 
+                : "text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-300"
+            )}
+            title="Modo Escuro"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg>
           </button>
         </div>
 

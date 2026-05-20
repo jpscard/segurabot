@@ -24,13 +24,11 @@ O projeto adota uma arquitetura inspirada em **Clean Architecture** (Spec-Driven
 
 ```text
 src/
-├── api/          # Adaptadores de infraestrutura concretos (ex: FirebaseRepositories, Gemini API clients)
-├── components/   # Componentes visuais (UI) focados apenas em renderização e controle de visualização
-├── context/      # Gerenciamento de estado global da aplicação (React Context / AuthProvider)
-├── pages/        # Telas (Páginas) que orquestram os componentes (ex: Dashboard, Landing Page, Auth)
-├── services/     # Casos de Uso (Application Layer) - Orquestração da lógica de negócio pura (ex: ProcessUserMessageUseCase)
-├── types/        # Domínio (Domain) - Entidades de negócio e Contratos/Interfaces puros (Ports)
-└── utils/        # Funções utilitárias auxiliares e scripts de carga de banco de dados (seeders)
+├── domain/         # Entidades de negócio e Contratos/Interfaces puros (Ports)
+├── application/    # Casos de Uso - Orquestração da lógica de negócio pura (ex: ProcessUserMessageUseCase)
+├── infrastructure/ # Adaptadores de infraestrutura concretos (ex: FirebaseRepositories, Gemini API clients)
+├── presentation/   # Componentes visuais (UI), Páginas e Contextos do React
+└── utils/          # Funções utilitárias auxiliares e scripts de carga de banco de dados (seeders)
 ```
 
 ### Princípios de "Harness Engineering" e Testabilidade

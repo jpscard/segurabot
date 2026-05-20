@@ -14,7 +14,7 @@ O **SeguraBot** é uma plataforma de assistente virtual baseada em Inteligência
 
 ## 4. Requisitos de Design e Experiência do Usuário (UI/UX)
 De acordo com as diretrizes de design estabelecidas, a interface do SeguraBot deve seguir rigorosamente as seguintes regras:
-*   **Minimalismo Absoluto:** A interface deve ser extremamente limpa. **É estritamente proibido o uso de ícones ou emojis** nos elementos visuais, garantindo um tom sóbrio e profissional.
+*   **Minimalismo e Design Profissional:** A interface deve ser limpa e seguir as referências do CRM UI Kit (Figma). **O uso de ícones (SVG, bibliotecas como Lucide) é permitido** para estruturar menus e ações visuais. O uso de emojis continua proibido para garantir um tom sóbrio e profissional.
 *   **Navegação e Controles:** Toda a navegação principal e seleções de opções devem ser feitas exclusivamente através de **botões estilizados**. O uso de menus de rádio (radio buttons) não é permitido, visando uma experiência visual mais sofisticada.
 *   **Estética Visual:** Suporte nativo, dinâmico e fluido a temas Claro e Escuro (Light e Dark modes).
 *   **Apresentação:** Uma Landing Page profissional e elegante, conectada a um fluxo de autenticação seguro.

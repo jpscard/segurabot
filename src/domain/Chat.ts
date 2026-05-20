@@ -8,6 +8,7 @@ export interface Message {
   role: Role;
   content: string;
   timestamp: string;
+  senderName?: string;
 }
 
 export interface ChatSession {
@@ -18,4 +19,7 @@ export interface ChatSession {
   updatedAt: string;
   createdAt: string;
   messages?: Message[];
+  status?: 'ia' | 'aguardando_humano' | 'humano';
+  operatorName?: string;
 }
+

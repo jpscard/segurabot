@@ -1,5 +1,5 @@
 import { GoogleGenAI } from "@google/genai";
-import { Message, Role } from "../types";
+import { Message, Role } from "../domain";
 
 let ai: GoogleGenAI | null = null;
 

@@ -1,8 +1,8 @@
 import { initializeApp } from 'firebase/app';
-import { getAuth, GoogleAuthProvider, signInWithPopup, signOut } from 'firebase/auth';
+import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, signInWithEmailAndPassword } from 'firebase/auth';
 import { getFirestore, doc, getDocFromServer } from 'firebase/firestore';
 import firebaseConfig from '../../firebase-applet-config.json';
-import { OperationType } from '../types';
+import { OperationType } from '../domain';
 
 const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
@@ -15,6 +15,16 @@ export async function loginWithGoogle() {
     return result.user;
   } catch (error) {
     console.error('Login error:', error);
+    throw error;
+  }
+}
+
+export async function loginDevAdmin() {
+  try {
+    const result = await signInWithEmailAndPassword(auth, 'admin@segurabot.com.br', 'password123');
+    return result.user;
+  } catch (error) {
+    console.error('Dev Login error:', error);
     throw error;
   }
 }

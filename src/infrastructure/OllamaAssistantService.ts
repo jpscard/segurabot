@@ -1,5 +1,5 @@
-import { IAIAssistantService } from '../types/IAIAssistantService';
-import { Message, Role } from '../types/Chat';
+import { IAIAssistantService } from '../domain/IAIAssistantService';
+import { Message, Role } from '../domain/Chat';
 
 export class OllamaAssistantService implements IAIAssistantService {
   private baseUrl: string;
@@ -10,7 +10,7 @@ export class OllamaAssistantService implements IAIAssistantService {
     this.baseUrl = baseUrl;
   }
 
-  async generateResponse(history: Message[], newPrompt: string): Promise<string> {
+  async generateResponse(history: Message[], newPrompt: string, onChunk?: (chunk: string) => void): Promise<string> {
     try {
       // Map our history to Ollama's chat format
       const ollamaMessages = history.map(msg => ({
@@ -32,7 +32,7 @@ export class OllamaAssistantService implements IAIAssistantService {
         body: JSON.stringify({
           model: this.modelName,
           messages: ollamaMessages,
-          stream: false
+          stream: true
         })
       });
 
@@ -40,8 +40,33 @@ export class OllamaAssistantService implements IAIAssistantService {
         throw new Error(`Ollama HTTP error! status: ${response.status}`);
       }
 
-      const data = await response.json();
-      return data.message.content;
+      const reader = response.body?.getReader();
+      const decoder = new TextDecoder('utf-8');
+      let fullText = "";
+
+      if (reader) {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          
+          const chunk = decoder.decode(value, { stream: true });
+          const lines = chunk.split('\n').filter(line => line.trim() !== '');
+          
+          for (const line of lines) {
+            try {
+              const data = JSON.parse(line);
+              if (data.message && data.message.content) {
+                fullText += data.message.content;
+                onChunk?.(data.message.content);
+              }
+            } catch (e) {
+              console.error("Error parsing Ollama chunk", e);
+            }
+          }
+        }
+      }
+
+      return fullText;
 
     } catch (error) {
       console.error("Ollama Error:", error);

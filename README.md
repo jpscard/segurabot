@@ -16,6 +16,22 @@ O **SeguraBot** é uma plataforma de assistente virtual baseada em Inteligência
 * **Navegação e Controles:** Navegação através de botões estilizados.
 * **Estética Visual:** Suporte a temas Claro e Escuro (Light e Dark modes).
 
+---
+
+## Demonstração Visual (Mockups Premium)
+
+Abaixo estão capturas de tela conceituais da interface premium da plataforma, projetada sob a premissa de minimalismo absoluto (sem emojis ou ícones nos elementos visuais) e navegação baseada em botões estilizados:
+
+### 1. Painel de Chat do Cliente (Dark Mode)
+Uma interface de chat moderna e fluida com efeito *glassmorphism*, focada em clareza e legibilidade absoluta para o segurado interagir com a IA.
+
+![SeguraBot Chat Dashboard](assets/dashboard_chat_mockup.png)
+
+### 2. Painel Administrativo de CRM (Grid Premium)
+Um painel administrativo robusto e limpo para corretores de seguros, exibindo de forma estruturada as apólices, sinistros recentes e as interações do assistente de IA.
+
+![SeguraBot CRM Admin](assets/crm_admin_mockup.png)
+
 ## Engenharia de Software e Arquitetura
 
 O projeto adota uma arquitetura inspirada em **Clean Architecture** (Spec-Driven), mas estruturada de forma *flat* (plana) para maior produtividade no ecossistema React/Vite. O objetivo principal é isolar as Regras de Negócio da Infraestrutura e da Tela (UI).

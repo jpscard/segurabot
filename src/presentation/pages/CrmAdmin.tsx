@@ -1,10 +1,13 @@
 import { useState, useEffect, useRef } from 'react';
-import { auth, handleFirestoreError } from '../../infrastructure/firebase';
+import { auth, handleFirestoreError, db } from '../../infrastructure/firebase';
 import { FirebaseCustomerRepository } from '../../infrastructure/FirebaseCustomerRepository';
 import { FirebaseChatRepository } from '../../infrastructure/FirebaseChatRepository';
 import { CustomerProfile, SupportTicket, OperationType, Policy, Claim, DocumentRecord } from '../../domain';
 import { ChatSession, Message, Role } from '../../domain/Chat';
 import { generateCustomerSummaryWithAI, extractDocumentOcrWithAI } from '../../infrastructure/gemini';
+import { onSnapshot, collection, deleteDoc, doc, addDoc } from 'firebase/firestore';
+import { GeminiEmbeddingService } from '../../infrastructure/GeminiEmbeddingService';
+import { uploadRealDataToKnowledgeBase } from '../../utils/seedKnowledgeBase';
 
 export function CrmAdmin() {
   const user = auth.currentUser;
@@ -13,7 +16,20 @@ export function CrmAdmin() {
   const [loading, setLoading] = useState(true);
 
   // Navegação por abas
-  const [activeTab, setActiveTab] = useState<'dados' | 'chamados' | 'chat'>('dados');
+  const [activeTab, setActiveTab] = useState<'dados' | 'chamados' | 'chat' | 'rag'>('dados');
+
+  // Estados da Base de Conhecimento (RAG)
+  const [kbEntries, setKbEntries] = useState<any[]>([]);
+  const [kbLoading, setKbLoading] = useState(true);
+  const [kbUploading, setKbUploading] = useState(false);
+  const [newCategory, setNewCategory] = useState('Geral');
+  const [newQuestion, setNewQuestion] = useState('');
+  const [newAnswer, setNewAnswer] = useState('');
+  const [newSource, setNewSource] = useState('');
+  const [kbSearchQuery, setKbSearchQuery] = useState('');
+  const [kbCurrentPage, setKbCurrentPage] = useState(1);
+  const kbItemsPerPage = 10;
+  const kbFileInputRef = useRef<HTMLInputElement>(null);
 
   // Formulário Perfil
   const [name, setName] = useState('');
@@ -109,6 +125,95 @@ export function CrmAdmin() {
       msgsUnsub();
     };
   }, [user, selectedSession]);
+
+  // Escuta a base de conhecimento (RAG) do Firestore em tempo real
+  useEffect(() => {
+    const kbRef = collection(db, 'knowledge_base');
+    const unsubscribe = onSnapshot(kbRef, (snapshot) => {
+      const entries = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+      setKbEntries(entries);
+      setKbLoading(false);
+    }, (error) => {
+      console.error("Erro ao escutar base de conhecimento RAG:", error);
+      setKbLoading(false);
+    });
+
+    return () => unsubscribe();
+  }, []);
+
+  const handleDeleteKbEntry = async (id: string) => {
+    if (!confirm("Tem certeza que deseja excluir permanentemente esta entrada da base de conhecimento RAG?")) return;
+    try {
+      await deleteDoc(doc(db, 'knowledge_base', id));
+    } catch (error) {
+      console.error("Erro ao deletar entrada do RAG:", error);
+      alert("Erro ao deletar entrada da base de conhecimento.");
+    }
+  };
+
+  const handleAddManualKbEntry = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newQuestion.trim() || !newAnswer.trim()) {
+      alert("A Pergunta e a Resposta são campos obrigatórios.");
+      return;
+    }
+    setKbUploading(true);
+    try {
+      const embeddingService = new GeminiEmbeddingService();
+      let embedding: number[] | null = null;
+      try {
+        embedding = await embeddingService.generateEmbedding(newQuestion.trim());
+      } catch (err) {
+        console.warn("Erro ao gerar embedding, salvando sem vetor (fallback ativado):", err);
+      }
+
+      const kbRef = collection(db, 'knowledge_base');
+      await addDoc(kbRef, {
+        category: newCategory.trim() || 'Geral',
+        question: newQuestion.trim(),
+        answer: newAnswer.trim(),
+        source: newSource.trim() || 'Inserção Manual',
+        embedding
+      });
+
+      setNewCategory('Geral');
+      setNewQuestion('');
+      setNewAnswer('');
+      setNewSource('');
+      setKbCurrentPage(1);
+      alert("Entrada cadastrada e indexada na base de conhecimento com sucesso!");
+    } catch (error) {
+      console.error("Erro ao cadastrar entrada RAG manual:", error);
+      alert("Erro ao cadastrar entrada na base de conhecimento.");
+    } finally {
+      setKbUploading(false);
+    }
+  };
+
+  const handleKbFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setKbUploading(true);
+    try {
+      const count = await uploadRealDataToKnowledgeBase(file);
+      alert(`Sucesso! ${count} registros extraídos, vetorizados por IA e importados para o RAG com sucesso.`);
+      setKbCurrentPage(1);
+    } catch (error: any) {
+      console.error("Erro na importação de arquivos para o RAG:", error);
+      alert(`Erro no processamento do arquivo: ${error.message || error}`);
+    } finally {
+      setKbUploading(false);
+      if (e.target) e.target.value = '';
+    }
+  };
+
+  const triggerKbFileSelect = () => {
+    kbFileInputRef.current?.click();
+  };
 
   const saveProfile = async () => {
     if (!user) return;
@@ -580,6 +685,267 @@ export function CrmAdmin() {
     );
   };
 
+  const renderRagTab = () => {
+    // Filtrar entradas com base na query de busca
+    const filteredEntries = kbEntries.filter(entry => {
+      const q = kbSearchQuery.toLowerCase();
+      return (
+        entry.category?.toLowerCase().includes(q) ||
+        entry.question?.toLowerCase().includes(q) ||
+        entry.answer?.toLowerCase().includes(q) ||
+        entry.source?.toLowerCase().includes(q)
+      );
+    });
+
+    // Paginação
+    const totalItems = filteredEntries.length;
+    const totalPages = Math.ceil(totalItems / kbItemsPerPage) || 1;
+    const startIndex = (kbCurrentPage - 1) * kbItemsPerPage;
+    const paginatedEntries = filteredEntries.slice(startIndex, startIndex + kbItemsPerPage);
+
+    // Ajustar a página atual se os filtros esvaziarem a lista
+    if (kbCurrentPage > totalPages) {
+      setKbCurrentPage(totalPages);
+    }
+
+    return (
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 animate-fadeIn">
+        {/* Coluna Esquerda: Ingestão de Conhecimento (col-span-5) */}
+        <div className="lg:col-span-5 space-y-8 select-none">
+          {/* Formulário de Cadastro Manual */}
+          <section className="bg-white dark:bg-slate-900 p-6 rounded-lg shadow-sm border border-[#ECECF2] dark:border-slate-800 space-y-5">
+            <div className="border-b border-[#ECECF2] dark:border-slate-800 pb-3">
+              <h3 className="font-bold text-sm text-slate-800 dark:text-slate-200 uppercase tracking-wider">
+                Cadastrar FAQ Manual
+              </h3>
+              <p className="text-[10px] text-[#8181A5] mt-1 font-normal leading-relaxed">
+                Adicione regras manuais diretamente no cérebro do assistente.
+              </p>
+            </div>
+
+            <form onSubmit={handleAddManualKbEntry} className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-bold text-[#8181A5] uppercase tracking-wider block">Categoria / Operadora</label>
+                  <input
+                    value={newCategory}
+                    onChange={e => setNewCategory(e.target.value)}
+                    placeholder="Ex: Saúde, Amil, Bradesco"
+                    className="w-full px-3 py-2 bg-[#F6F6F6] dark:bg-slate-950 border border-[#ECECF2] dark:border-slate-800 rounded-lg text-xs outline-none focus:border-[#5E81F4] text-slate-800 dark:text-slate-200 font-normal transition-all"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-bold text-[#8181A5] uppercase tracking-wider block">Fonte / Origem</label>
+                  <input
+                    value={newSource}
+                    onChange={e => setNewSource(e.target.value)}
+                    placeholder="Ex: Manual 2026, Regra RH"
+                    className="w-full px-3 py-2 bg-[#F6F6F6] dark:bg-slate-950 border border-[#ECECF2] dark:border-slate-800 rounded-lg text-xs outline-none focus:border-[#5E81F4] text-slate-800 dark:text-slate-200 font-normal transition-all"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-bold text-[#8181A5] uppercase tracking-wider block font-sans">Pergunta / Tópico de Entrada</label>
+                <input
+                  value={newQuestion}
+                  onChange={e => setNewQuestion(e.target.value)}
+                  placeholder="Ex: Qual a carência de parto no plano Amil?"
+                  className="w-full px-3 py-2 bg-[#F6F6F6] dark:bg-slate-950 border border-[#ECECF2] dark:border-slate-800 rounded-lg text-xs outline-none focus:border-[#5E81F4] text-slate-800 dark:text-slate-200 font-normal transition-all"
+                  required
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-bold text-[#8181A5] uppercase tracking-wider block">Resposta / Instrução Oficial</label>
+                <textarea
+                  value={newAnswer}
+                  onChange={e => setNewAnswer(e.target.value)}
+                  placeholder="Ex: Conforme condições gerais, a carência é de 10 meses (300 dias)..."
+                  rows={4}
+                  className="w-full px-3 py-2 bg-[#F6F6F6] dark:bg-slate-950 border border-[#ECECF2] dark:border-slate-800 rounded-lg text-xs outline-none focus:border-[#5E81F4] text-slate-800 dark:text-slate-200 font-normal transition-all resize-none scrollbar-thin"
+                  required
+                />
+              </div>
+
+              <button
+                type="submit"
+                disabled={kbUploading}
+                className="w-full py-2.5 bg-slate-900 hover:bg-slate-800 dark:bg-slate-800 dark:hover:bg-slate-700 text-white text-xs font-bold uppercase tracking-wider rounded-lg transition-colors duration-200 disabled:opacity-50 cursor-pointer shadow-sm"
+              >
+                {kbUploading ? 'Indexando com IA...' : 'Cadastrar na Base'}
+              </button>
+            </form>
+          </section>
+
+          {/* Importação Automática por Arquivo */}
+          <section className="bg-white dark:bg-slate-900 p-6 rounded-lg shadow-sm border border-[#ECECF2] dark:border-slate-800 space-y-5">
+            <div className="border-b border-[#ECECF2] dark:border-slate-800 pb-3">
+              <h3 className="font-bold text-sm text-slate-800 dark:text-slate-200 uppercase tracking-wider">
+                Importação Automatizada por IA
+              </h3>
+              <p className="text-[10px] text-[#8181A5] mt-1 font-normal leading-relaxed">
+                Carregue um PDF de manual, tabela JSON ou planilha CSV. O SeguraBot usará Inteligência Artificial para ler, fatiar (chunking) e gerar embeddings semânticos de forma autônoma.
+              </p>
+            </div>
+
+            <div className="space-y-4">
+              <input
+                type="file"
+                ref={kbFileInputRef}
+                onChange={handleKbFileUpload}
+                accept=".pdf,.csv,.json"
+                className="hidden"
+                disabled={kbUploading}
+              />
+              
+              <button
+                type="button"
+                onClick={triggerKbFileSelect}
+                disabled={kbUploading}
+                className="w-full py-5 border-2 border-dashed border-[#ECECF2] dark:border-slate-800 hover:border-[#5E81F4] dark:hover:border-[#5E81F4] rounded-xl flex flex-col items-center justify-center gap-2 cursor-pointer bg-slate-50/30 dark:bg-slate-950/20 hover:bg-slate-50 dark:hover:bg-slate-950/50 transition-all duration-200 disabled:opacity-50"
+              >
+                <span className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider">
+                  {kbUploading ? 'Processando Documento...' : 'Selecionar Documento'}
+                </span>
+                <span className="text-[9px] text-[#8181A5] tracking-wide">
+                  Suporta arquivos .pdf, .csv ou .json
+                </span>
+              </button>
+
+              {kbUploading && (
+                <div className="flex items-center justify-center gap-2 text-[10px] font-bold text-blue-600 dark:text-blue-400 uppercase tracking-wider animate-pulse">
+                  <div className="w-2.5 h-2.5 border border-t-transparent border-blue-600 rounded-full animate-spin" />
+                  Extraindo e indexando embeddings por IA...
+                </div>
+              )}
+            </div>
+          </section>
+        </div>
+
+        {/* Coluna Direita: Central de Chunks e Visualização (col-span-7) */}
+        <div className="lg:col-span-7 space-y-6">
+          <div className="bg-white dark:bg-slate-900 p-6 rounded-lg shadow-sm border border-[#ECECF2] dark:border-slate-800 flex flex-col min-h-[500px]">
+            {/* Header da Coluna */}
+            <div className="border-b border-[#ECECF2] dark:border-slate-800 pb-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 select-none">
+              <div>
+                <h3 className="font-bold text-sm text-slate-800 dark:text-slate-200 uppercase tracking-wider">
+                  Base de Conhecimento Ativa ({totalItems})
+                </h3>
+                <p className="text-[10px] text-[#8181A5] mt-1 font-normal">
+                  Visualize e gerencie os blocos semânticos armazenados no Firestore.
+                </p>
+              </div>
+
+              {/* Input de Pesquisa Responsivo */}
+              <input
+                value={kbSearchQuery}
+                onChange={e => {
+                  setKbSearchQuery(e.target.value);
+                  setKbCurrentPage(1); // Reseta para a primeira página ao buscar
+                }}
+                placeholder="Pesquisar na base..."
+                className="px-3 py-2 bg-[#F6F6F6] dark:bg-slate-950 border border-[#ECECF2] dark:border-slate-800 rounded-lg text-xs outline-none focus:border-[#5E81F4] text-slate-800 dark:text-slate-200 font-normal transition-all w-full sm:w-48"
+              />
+            </div>
+
+            {/* Listagem de Chunks */}
+            <div className="flex-1 space-y-4 py-4">
+              {kbLoading ? (
+                <div className="flex flex-col items-center justify-center py-20 gap-3">
+                  <div className="w-4 h-4 border border-t-transparent border-blue-500 rounded-full animate-spin" />
+                  <span className="text-[10px] font-bold text-[#8181A5] uppercase tracking-wider">Carregando base...</span>
+                </div>
+              ) : paginatedEntries.length > 0 ? (
+                <div className="space-y-4">
+                  {paginatedEntries.map(entry => (
+                    <div
+                      key={entry.id}
+                      className="p-4 bg-slate-50/50 dark:bg-slate-950/20 border border-[#ECECF2] dark:border-slate-800 rounded-lg flex flex-col gap-2 hover:shadow-sm transition-shadow duration-200"
+                    >
+                      <div className="flex items-center justify-between gap-3 flex-wrap">
+                        <div className="flex items-center gap-2 select-none">
+                          <span className="text-[9px] font-bold px-2 py-0.5 bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded uppercase tracking-wider">
+                            {entry.category || 'Geral'}
+                          </span>
+                          <span className={`text-[8px] font-bold px-2 py-0.5 rounded uppercase tracking-wider font-mono ${
+                            entry.embedding 
+                              ? 'bg-emerald-50 dark:bg-emerald-950/20 text-emerald-600 dark:text-emerald-400' 
+                              : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400'
+                          }`}>
+                            {entry.embedding ? 'Vetorizado por IA' : 'Somente Texto'}
+                          </span>
+                        </div>
+
+                        {/* Botão de Excluir */}
+                        <button
+                          onClick={() => handleDeleteKbEntry(entry.id)}
+                          className="text-[9px] font-bold uppercase tracking-wider text-rose-600 hover:text-rose-700 transition-colors py-1 px-2.5 rounded hover:bg-rose-50 dark:hover:bg-rose-950/20 border border-transparent hover:border-rose-100 dark:hover:border-transparent cursor-pointer"
+                        >
+                          Excluir
+                        </button>
+                      </div>
+
+                      <div className="space-y-1">
+                        <h4 className="text-xs font-bold text-slate-800 dark:text-slate-200 leading-snug">
+                          {entry.question}
+                        </h4>
+                        <p className="text-[10px] text-slate-600 dark:text-slate-400 leading-relaxed break-words">
+                          {entry.answer}
+                        </p>
+                      </div>
+
+                      <div className="flex justify-between items-center text-[8px] font-mono text-slate-400 select-none font-semibold pt-1 border-t border-slate-200/40 dark:border-slate-800/40 mt-1">
+                        <span>Fonte: {entry.source || 'Não especificada'}</span>
+                        <span>ID: {entry.id}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="flex flex-col items-center justify-center py-20 text-center select-none">
+                  <span className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+                    Nenhum registro encontrado
+                  </span>
+                  <p className="text-[10px] text-[#8181A5] max-w-xs mt-1.5 leading-relaxed font-normal">
+                    Não existem informações cadastradas ou nenhum chunk atende à sua busca atual.
+                  </p>
+                </div>
+              )}
+            </div>
+
+            {/* Controles de Paginação */}
+            {totalPages > 1 && (
+              <div className="border-t border-[#ECECF2] dark:border-slate-800 pt-4 flex items-center justify-between select-none">
+                <button
+                  type="button"
+                  disabled={kbCurrentPage === 1}
+                  onClick={() => setKbCurrentPage(prev => Math.max(prev - 1, 1))}
+                  className="px-4 py-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-colors disabled:opacity-50 cursor-pointer border border-slate-200/50 dark:border-slate-700"
+                >
+                  Anterior
+                </button>
+
+                <span className="text-[10px] font-mono font-bold text-slate-500 uppercase tracking-wider">
+                  Página {kbCurrentPage} de {totalPages}
+                </span>
+
+                <button
+                  type="button"
+                  disabled={kbCurrentPage === totalPages}
+                  onClick={() => setKbCurrentPage(prev => Math.min(prev + 1, totalPages))}
+                  className="px-4 py-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-colors disabled:opacity-50 cursor-pointer border border-slate-200/50 dark:border-slate-700"
+                >
+                  Próximo
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   return (
     <div className="flex-1 overflow-y-auto bg-[#F6F6F6] dark:bg-slate-950 p-6 md:p-10 scrollbar-thin font-sans">
       <div className="max-w-6xl mx-auto space-y-8">
@@ -669,6 +1035,17 @@ export function CrmAdmin() {
             }`}
           >
             Chat em Tempo Real
+          </button>
+
+          <button
+            onClick={() => setActiveTab('rag')}
+            className={`px-5 py-2.5 rounded-lg text-xs font-bold uppercase tracking-wider transition-all duration-200 cursor-pointer ${
+              activeTab === 'rag'
+                ? 'bg-blue-600 text-white shadow-md shadow-blue-500/10'
+                : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-400 border border-[#ECECF2] dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800'
+            }`}
+          >
+            Base de Conhecimento (RAG)
           </button>
         </div>
 
@@ -1263,6 +1640,9 @@ export function CrmAdmin() {
 
         {/* Tab 3: Chat em Tempo Real */}
         {activeTab === 'chat' && renderLiveChatTab()}
+
+        {/* Tab 4: Base de Conhecimento (RAG) */}
+        {activeTab === 'rag' && renderRagTab()}
 
       </div>
     </div>

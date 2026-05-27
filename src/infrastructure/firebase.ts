@@ -1,5 +1,5 @@
 import { initializeApp } from 'firebase/app';
-import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, signInWithEmailAndPassword } from 'firebase/auth';
+import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, signInWithEmailAndPassword, sendPasswordResetEmail, signInAnonymously } from 'firebase/auth';
 import { getFirestore, doc, getDocFromServer } from 'firebase/firestore';
 import firebaseConfig from '../../firebase-applet-config.json';
 import { OperationType } from '../domain';
@@ -8,6 +8,18 @@ const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
 export const db = getFirestore(app);
 export const googleProvider = new GoogleAuthProvider();
+// Force account selection screen on every login so users can choose another Gmail
+googleProvider.setCustomParameters({ prompt: 'select_account' });
+
+export async function loginAnonymously() {
+  try {
+    const result = await signInAnonymously(auth);
+    return result.user;
+  } catch (error) {
+    console.error('Anonymous Login error:', error);
+    throw error;
+  }
+}
 
 export async function loginWithGoogle() {
   try {
@@ -25,6 +37,25 @@ export async function loginDevAdmin() {
     return result.user;
   } catch (error) {
     console.error('Dev Login error:', error);
+    throw error;
+  }
+}
+
+export async function loginWithEmail(email: string, password: string) {
+  try {
+    const result = await signInWithEmailAndPassword(auth, email, password);
+    return result.user;
+  } catch (error) {
+    console.error('Email Login error:', error);
+    throw error;
+  }
+}
+
+export async function sendPasswordRecovery(email: string) {
+  try {
+    await sendPasswordResetEmail(auth, email);
+  } catch (error) {
+    console.error('Password recovery error:', error);
     throw error;
   }
 }

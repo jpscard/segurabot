@@ -35,9 +35,13 @@ export function createSeguraBotGraph(
       userText.includes("falar com humano") ||
       userText.includes("falar com atendente") ||
       userText.includes("atendente humano") ||
+      userText.includes("atendimento humano") ||
       userText.includes("suporte humano") ||
       userText.includes("falar com pessoa") ||
       userText.includes("corretor") ||
+      userText.includes("suporte com humano") ||
+      userText.includes("chamar atendente") ||
+      userText.includes("chame um atendente") ||
       userText.includes("transferir para humano")
     ) {
       return { nextAgent: "handoff_agent" };

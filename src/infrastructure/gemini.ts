@@ -6,7 +6,7 @@ let lastApiKey: string | null = null;
 
 function getAI() {
   const customKey = typeof window !== 'undefined' ? localStorage.getItem('gemini_api_key') : null;
-  const apiKey = customKey || import.meta.env.VITE_GEMINI_API_KEY || "";
+  const apiKey = customKey || (typeof process !== 'undefined' && process.env ? process.env.GEMINI_API_KEY : '') || import.meta.env.VITE_GEMINI_API_KEY || "";
   
   if (!apiKey) {
     console.warn("GEMINI_API_KEY is not set. Using mock mode.");
@@ -34,6 +34,22 @@ export async function askSeguraBot(
 ) {
   try {
     const userMessage = messages[messages.length - 1].content;
+    
+    // Guardrail Contra Prompt Injection
+    const injectionPatterns = [
+      "ignorar as instruções", "ignore as instruções", "ignore as instrucoes", "ignorar as instrucoes",
+      "ignore previous instructions", "forget previous instructions",
+      "desconsidere as instruções", "desconsidere as instrucoes", "esqueca as instruções", "esqueca as instrucoes",
+      "you are now an admin", "você agora é um administrador", "voce agora e um administrador",
+      "instruções de sistema", "instrucoes de sistema", "system instructions", "system prompt"
+    ];
+    
+    const lowercaseInput = userMessage.toLowerCase();
+    const hasInjection = injectionPatterns.some(pattern => lowercaseInput.includes(pattern));
+    
+    if (hasInjection) {
+      throw new Error("Mensagem bloqueada pelo filtro de segurança (Prompt Injection detectado).");
+    }
     
     // Dynamic RAG: Find relevant context from Firebase Knowledge Base
     const relevantDocs = await kbRepository.searchRelevantContext(userMessage);
@@ -152,8 +168,10 @@ Por favor, adicione a variável \`VITE_GEMINI_API_KEY\` no seu arquivo \`.env.lo
       return mockResponse;
     }
 
+    const activeModel = typeof window !== 'undefined' ? localStorage.getItem('gemini_model') || 'gemini-2.5-flash' : 'gemini-2.5-flash';
+
     const responseStream = await aiInstance.models.generateContentStream({
-      model: "gemini-3-flash",
+      model: activeModel,
       contents: { parts: [{ text: messages[messages.length - 1].content }] },
       config: {
         systemInstruction,
@@ -200,7 +218,7 @@ ATENÇÃO: Não inclua blocos markdown (como \`\`\`json). Retorne apenas o array
   const b64 = base64Data.includes('base64,') ? base64Data.split('base64,')[1] : base64Data;
 
   const response = await aiInstance.models.generateContent({
-    model: "gemini-3-flash",
+    model: "gemini-2.5-flash",
     contents: {
       role: "user",
       parts: [
@@ -275,7 +293,7 @@ Escreva em português (PT-BR) de forma profissional, direta e executiva, destaca
 
   try {
     const response = await aiInstance.models.generateContent({
-      model: "gemini-3-flash",
+      model: "gemini-2.5-flash",
       contents: prompt
     });
     return response.text?.trim() || "Sem resposta da IA.";
@@ -310,7 +328,7 @@ Retorne apenas o texto limpo com os dados extraídos de forma estruturada. Seja 
 
   try {
     const response = await aiInstance.models.generateContent({
-      model: "gemini-3-flash",
+      model: "gemini-2.5-flash",
       contents: {
         role: "user",
         parts: [
@@ -323,6 +341,44 @@ Retorne apenas o texto limpo com os dados extraídos de forma estruturada. Seja 
   } catch (error) {
     console.error("Erro no processamento OCR por IA:", error);
     throw error;
+  }
+}
+
+export async function extractFAQsFromWebpage(htmlText: string, sourceUrl: string): Promise<any[]> {
+  const aiInstance = getAI();
+  if (!aiInstance) throw new Error("A chave da API Gemini não está configurada.");
+
+  const prompt = `Aja como um analista de seguros sênior. Leia o seguinte texto bruto extraído de uma página web oficial de seguros (Fonte: ${sourceUrl}).
+Extraia todas as regras importantes, coberturas, franquias, prazos ou procedimentos descritos.
+Crie um conjunto de Perguntas e Respostas cobrindo todo o conteúdo relevante.
+
+Retorne EXATAMENTE E APENAS UM ARRAY JSON válido contendo objetos no seguinte formato:
+[
+  {
+    "category": "Nome da Categoria (Ex: Sinistros, Coberturas)",
+    "question": "Pergunta extraída da página?",
+    "answer": "Resposta detalhada com base no texto.",
+    "source": "${sourceUrl}"
+  }
+]
+ATENÇÃO: Não inclua blocos markdown (como \`\`\`json). Retorne apenas o array JSON puro, começando com [ e terminando com ].
+
+Texto da Página Web:
+${htmlText.slice(0, 10000)}`;
+
+  const response = await aiInstance.models.generateContent({
+    model: "gemini-2.5-flash",
+    contents: prompt
+  });
+
+  const text = response.text || "[]";
+  const cleanedText = text.replace(/```json/g, '').replace(/```/g, '').trim();
+  
+  try {
+    return JSON.parse(cleanedText);
+  } catch (e) {
+    console.error("Erro ao fazer parse do JSON do Gemini extraído da web:", cleanedText);
+    throw new Error("A IA não retornou um formato JSON válido. Tente usar uma página com menos texto.");
   }
 }
 

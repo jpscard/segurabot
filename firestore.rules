@@ -19,6 +19,20 @@ service cloud.firestore {
       return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
     }
 
+    function isAtendenteOrAdmin() {
+      return isSignedIn() && 
+        request.auth.token.email != null && 
+        (request.auth.token.email == 'admin@segurabot.com.br' || 
+         request.auth.token.email == 'atendente@segurabot.com.br');
+    }
+
+    function isAtendenteOrAdminToken() {
+      return isSignedIn() && 
+        request.auth.token.email != null && 
+        (request.auth.token.email == 'admin@segurabot.com.br' || 
+         request.auth.token.email == 'atendente@segurabot.com.br');
+    }
+
     // Users collection
     match /users/{userId} {
       allow read: if isOwner(userId);
@@ -29,37 +43,45 @@ service cloud.firestore {
         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['displayName', 'photoURL']);
     }
 
+    // Collection group rule for omnichannel operator queue
+    match /{path=**}/chat_sessions/{sessionId} {
+      allow read, update: if isAtendenteOrAdminToken();
+    }
+
     // Chat sessions
     match /users/{userId}/chat_sessions/{sessionId} {
-      allow read: if isOwner(userId);
-      allow create: if isOwner(userId) && 
-        request.resource.data.keys().hasAll(['userId', 'title', 'lastMessage', 'updatedAt', 'createdAt']) &&
-        request.resource.data.userId == request.auth.uid;
-      allow update: if isOwner(userId) &&
-        request.resource.data.diff(resource.data).affectedKeys().hasAny(['title', 'lastMessage', 'updatedAt']);
-      allow delete: if isOwner(userId);
+      allow read: if isOwner(userId) || isAtendenteOrAdminToken() || userId.matches('^visitor-.*');
+      allow create: if isOwner(userId) || isAtendenteOrAdminToken() || userId.matches('^visitor-.*');
+      allow update: if isOwner(userId) || isAtendenteOrAdminToken() || userId.matches('^visitor-.*');
+      allow delete: if isOwner(userId) || isAtendenteOrAdminToken();
 
       // Messages sub-collection
       match /messages/{messageId} {
-        allow read: if isOwner(userId);
-        allow create: if isOwner(userId) &&
-          request.resource.data.keys().hasAll(['role', 'content', 'timestamp']) &&
-          (request.resource.data.role == 'user' || request.resource.data.role == 'model');
+        allow read: if isOwner(userId) || isAtendenteOrAdminToken() || userId.matches('^visitor-.*');
+        allow create: if isOwner(userId) || isAtendenteOrAdminToken() || userId.matches('^visitor-.*');
+        allow update: if isOwner(userId) || isAtendenteOrAdminToken() || userId.matches('^visitor-.*');
+        allow delete: if isOwner(userId) || isAtendenteOrAdminToken();
       }
     }
 
-    // Knowledge Base - Read-only for signed-in users
+    // Knowledge Base - Read for signed-in users, write for atendentes/admins
     match /knowledge_base/{entryId} {
-      allow read: if isSignedIn();
-      allow write: if false; // Only admin via console/internal tools
+      allow read: if isSignedIn() || request.auth == null; // Allow unauthenticated landing visitors to read FAQs
+      allow write: if isAtendenteOrAdmin();
+    }
+
+    // Knowledge Sources - Read for signed-in users, write for atendentes/admins
+    match /knowledge_sources/{sourceId} {
+      allow read: if isSignedIn() || request.auth == null; // Allow unauthenticated landing visitors to read sources
+      allow write: if isAtendenteOrAdmin();
     }
 
     // Customers - Users can only read/write their own profile
     match /customers/{customerId} {
-      allow read: if isSignedIn() && (resource == null || resource.data.userId == request.auth.uid);
-      allow create: if isSignedIn() && request.resource.data.userId == request.auth.uid && customerId == request.auth.uid;
-      allow update: if isSignedIn() && resource.data.userId == request.auth.uid && request.resource.data.userId == request.auth.uid;
-      allow delete: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow read: if (isSignedIn() && (resource == null || resource.data.userId == request.auth.uid)) || customerId.matches('^visitor-.*');
+      allow create: if (isSignedIn() && request.resource.data.userId == request.auth.uid && customerId == request.auth.uid) || customerId.matches('^visitor-.*');
+      allow update: if (isSignedIn() && resource.data.userId == request.auth.uid && request.resource.data.userId == request.auth.uid) || customerId.matches('^visitor-.*');
+      allow delete: if (isSignedIn() && resource.data.userId == request.auth.uid);
     }
 
     // Support Tickets - Users can only read/write their own tickets
@@ -68,6 +90,19 @@ service cloud.firestore {
       allow create: if isSignedIn() && request.resource.data.userId == request.auth.uid;
       allow update: if isSignedIn() && resource.data.userId == request.auth.uid && request.resource.data.userId == request.auth.uid;
       allow delete: if isSignedIn() && resource.data.userId == request.auth.uid;
+    }
+
+    // Analytics Events Tracking
+    match /analytics/{eventId} {
+      allow create: if true; // Anonymous visitors can track events
+      allow read: if isAtendenteOrAdmin(); // Only operators/admins can view dashboard stats
+      allow update, delete: if false; // Historical logs are immutable
+    }
+
+    // Global Settings (e.g., IA Config) - Public read, Admin/Atendente write
+    match /settings/{settingId} {
+      allow read: if true;
+      allow write: if isAtendenteOrAdmin();
     }
   }
 }

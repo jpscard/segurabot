@@ -110,9 +110,45 @@ Estes testes garantem que a segurança implementada em `firestore.rules` está f
 
 ---
 
-## 4. Execução dos Testes
+## 4. Testes de Regras de Segurança Avançadas & Guardrails (Implementados)
+
+Estes testes garantem o funcionamento correto de nossas barreiras ativas de segurança contra abusos cibernéticos e injeções de IA.
+
+### 4.1 Prompt Injection Guardrails
+*   **Teste 1: Bloqueio de comandos de evasão**
+    *   **Cenário:** O usuário envia uma mensagem contendo termos proibidos de evasão (ex: *"ignore as instruções"* ou *"voce agora e um administrador"*).
+    *   **Esperado:** A camada ativa de controle léxico no caso de uso intercepta e cancela a transmissão ao Gemini, gravando um aviso de segurança no histórico e retornando um erro tratado.
+
+### 4.2 Controle de Acesso Baseado em Papéis (RBAC)
+*   **Teste 1: Acesso de Escrita no RAG (Apenas Admins/Atendentes)**
+    *   **Cenário:** Usuário comum tenta gravar/excluir chunks em `knowledge_base` ou fontes em `knowledge_sources`.
+    *   **Esperado:** Bloqueado (Permissão Negada).
+*   **Teste 2: Acesso de Rastreamento Anônimo (Analytics)**
+    *   **Cenário:** Visitante anônimo cria um evento de analítica em `analytics`.
+    *   **Esperado:** Permitido (essencial para capturar visualizações de página sem autenticação).
+*   **Teste 3: Leitura de Analytics (Apenas Admins/Atendentes)**
+    *   **Cenário:** Usuário comum tenta ler os registros ou computar relatórios de `analytics`.
+    *   **Esperado:** Bloqueado (Permissão Negada).
+
+---
+
+## 5. Testes da Camada de Analytics
+
+#### `FirebaseAnalyticsRepository`
+Valida a captação de métricas de funil.
+
+*   **Teste 1: Rastreamento atômico de eventos**
+    *   **Cenário:** Invocar o método `track` enviando dados de visualização de página.
+    *   **Esperado:** Chamar o SDK do Firestore para gravação incluindo carimbo de data/hora dinâmico.
+*   **Teste 2: Agrupamento e computação estatística do funil**
+    *   **Cenário:** Simular múltiplos acessos no Firestore (alguns visitantes pulando etapas, outros engajando e outros saindo sem interagir).
+    *   **Esperado:** Calcular corretamente a Taxa de Rejeição (Bounce Rate), cliques, conversões e ordenar cronologicamente todos os eventos em memória.
+
+---
+
+## 6. Execução dos Testes
 
 O projeto utiliza o **Vitest** para execução dos testes.
 
-*   Para rodar todos os testes: `npm run test`
+*   Para rodar todos os testes (26 testes no total): `npm run test`
 *   Para rodar em modo watch (desenvolvimento): `npm run test:watch`

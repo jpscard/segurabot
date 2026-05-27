@@ -24,11 +24,16 @@ export class OllamaAssistantService implements IAIAssistantService {
         content: newPrompt
       });
 
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json'
+      };
+      if (this.baseUrl && this.baseUrl.includes('.loca.lt')) {
+        headers['bypass-tunnel-reminder'] = 'true';
+      }
+
       const response = await fetch(`${this.baseUrl}/api/chat`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
+        headers,
         body: JSON.stringify({
           model: this.modelName,
           messages: ollamaMessages,

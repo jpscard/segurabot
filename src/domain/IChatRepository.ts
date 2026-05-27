@@ -14,7 +14,7 @@ export interface IChatRepository {
   /**
    * Updates the session metadata (e.g., last message, updatedAt).
    */
-  updateSession(userId: string, session: ChatSession): Promise<void>;
+  updateSession(userId: string, session: ChatSession | (Partial<ChatSession> & { id: string })): Promise<void>;
 
   /**
    * Creates a new chat session.
@@ -30,6 +30,11 @@ export interface IChatRepository {
    * Listens to sessions in real-time.
    */
   listenToSessions(userId: string, callback: (sessions: ChatSession[]) => void, onError: (error: Error) => void): () => void;
+
+  /**
+   * Listens to all sessions across all users in real-time (for operators/admins).
+   */
+  listenToAllSessions(callback: (sessions: ChatSession[]) => void, onError: (error: Error) => void): () => void;
 
   /**
    * Listens to messages in real-time for a session.

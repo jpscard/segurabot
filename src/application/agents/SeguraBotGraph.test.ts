@@ -23,6 +23,7 @@ describe('SeguraBotGraph', () => {
       createSession: vi.fn(),
       deleteSession: vi.fn(),
       listenToSessions: vi.fn(),
+      listenToAllSessions: vi.fn(),
       listenToMessages: vi.fn(),
     };
 
@@ -36,6 +37,7 @@ describe('SeguraBotGraph', () => {
 
     mockCustomerRepo = {
       getCustomerProfile: vi.fn(),
+      getCustomerProfileByEmail: vi.fn(),
       getSupportTickets: vi.fn(),
       saveCustomerProfile: vi.fn(),
       createSupportTicket: vi.fn(),

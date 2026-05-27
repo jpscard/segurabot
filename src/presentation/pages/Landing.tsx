@@ -1,24 +1,105 @@
 import { useState, useEffect } from 'react';
-import { loginWithGoogle, loginDevAdmin } from '../../infrastructure/firebase';
+import { loginWithGoogle, loginDevAdmin, loginWithEmail, sendPasswordRecovery } from '../../infrastructure/firebase';
 import { ChatWidget } from '../components/ChatWidget';
 import { cn } from '../../utils/utils';
 import { useTheme } from '../context/ThemeContext';
-import { Shield, Zap, Users, BarChart3, ArrowRight, ChevronRight, Lock, Globe } from 'lucide-react';
+import { Shield, Zap, Users, BarChart3, ArrowRight, ChevronRight, Lock, Globe, Mail, Chrome, Key } from 'lucide-react';
+import { trackAnalyticsEvent } from '../../utils/analytics';
 
 export function Landing() {
   const [isLoggingIn, setIsLoggingIn] = useState(false);
+  const [showLoginModal, setShowLoginModal] = useState(false);
+  const [loginEmail, setLoginEmail] = useState('');
+  const [loginPassword, setLoginPassword] = useState('');
+  const [loginError, setLoginError] = useState('');
+  const [loginSuccessMessage, setLoginSuccessMessage] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  
   const { theme, setTheme } = useTheme();
 
-  const handleLogin = async () => {
+  useEffect(() => {
+    trackAnalyticsEvent('page_view');
+  }, []);
+
+  const handleLogin = () => {
+    setShowLoginModal(true);
+    setLoginError('');
+    setLoginSuccessMessage('');
+  };
+
+  const handleEmailLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
     setIsLoggingIn(true);
+    setLoginError('');
     try {
-      if (import.meta.env.DEV) {
-        await loginDevAdmin();
-      } else {
-        await loginWithGoogle();
+      await loginWithEmail(loginEmail, loginPassword);
+      trackAnalyticsEvent('conversion');
+    } catch (error: any) {
+      console.error("Email login failed", error);
+      let message = "Falha ao autenticar. Por favor, verifique seus dados.";
+      if (error && error.code) {
+        switch (error.code) {
+          case 'auth/invalid-email':
+            message = "Formato de e-mail inválido.";
+            break;
+          case 'auth/user-not-found':
+          case 'auth/wrong-password':
+          case 'auth/invalid-credential':
+            message = "E-mail ou senha incorretos.";
+            break;
+          case 'auth/too-many-requests':
+            message = "Muitas tentativas malsucedidas. Tente novamente mais tarde.";
+            break;
+          default:
+            if (error.message) {
+              message = error.message;
+            }
+        }
       }
-    } catch (error) {
-      console.error("Login failed", error);
+      setLoginError(message);
+      setIsLoggingIn(false);
+    }
+  };
+
+  const handleGoogleLogin = async () => {
+    setIsLoggingIn(true);
+    setLoginError('');
+    try {
+      await loginWithGoogle();
+      trackAnalyticsEvent('conversion');
+    } catch (error: any) {
+      console.error("Google login failed", error);
+      if (error && error.code !== 'auth/popup-closed-by-user') {
+        setLoginError("Falha na autenticação com Google.");
+      }
+      setIsLoggingIn(false);
+    }
+  };
+
+  const handlePasswordRecovery = async () => {
+    if (!loginEmail.trim()) {
+      setLoginError("Por favor, digite seu e-mail corporativo no campo de e-mail.");
+      setLoginSuccessMessage('');
+      return;
+    }
+    
+    setIsLoggingIn(true);
+    setLoginError('');
+    setLoginSuccessMessage('');
+    
+    try {
+      await sendPasswordRecovery(loginEmail.trim());
+      setLoginSuccessMessage("E-mail de recuperação enviado! Verifique sua caixa de entrada.");
+      setIsLoggingIn(false);
+    } catch (error: any) {
+      console.error("Password recovery failed", error);
+      let message = "Falha ao enviar e-mail de recuperação. Tente novamente.";
+      if (error && error.code === 'auth/user-not-found') {
+        message = "E-mail corporativo não cadastrado no sistema.";
+      } else if (error && error.code === 'auth/invalid-email') {
+        message = "Formato de e-mail inválido.";
+      }
+      setLoginError(message);
       setIsLoggingIn(false);
     }
   };
@@ -59,13 +140,15 @@ export function Landing() {
       
       {/* Header */}
       <header className="fixed top-0 left-0 right-0 z-50 glass border-b border-[#ECECF2] dark:border-slate-800 transition-colors duration-300">
-        <div className="max-w-7xl mx-auto px-6 py-4 flex justify-between items-center">
+        <div className="max-w-7xl mx-auto px-4 py-3 md:px-6 md:py-4 flex justify-between items-center">
           {/* Logo */}
-          <div className="flex items-center gap-2.5">
-            <div className="w-9 h-9 bg-[#5E81F4] rounded-xl flex items-center justify-center text-white font-bold text-sm shadow-lg shadow-[#5E81F4]/20">
-              S
-            </div>
-            <span className="text-xl font-bold tracking-tight text-slate-900 dark:text-white">
+          <div className="flex items-center gap-2 md:gap-2.5">
+            <img 
+              src={theme === 'dark' ? '/logo-dark.png' : '/logo-light.png'} 
+              alt="SeguraBot Logo" 
+              className="w-9 h-9 md:w-12 md:h-12 object-contain" 
+            />
+            <span className="text-lg md:text-xl font-bold tracking-tight text-slate-900 dark:text-white">
               Segura<span className="text-[#5E81F4]">Bot</span>
             </span>
           </div>
@@ -80,9 +163,9 @@ export function Landing() {
           </nav>
 
           {/* CTA & Theme Toggle */}
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 md:gap-3">
             {/* Theme Toggle */}
-            <div className="flex items-center bg-white dark:bg-slate-900 p-1 rounded-lg border border-[#ECECF2] dark:border-slate-800 transition-colors">
+            <div className="hidden sm:flex items-center bg-white dark:bg-slate-900 p-1 rounded-lg border border-[#ECECF2] dark:border-slate-800 transition-colors">
               <button
                 onClick={() => setTheme('light')}
                 className={cn(
@@ -112,10 +195,10 @@ export function Landing() {
             <button
               onClick={handleLogin}
               disabled={isLoggingIn}
-              className="px-5 py-2.5 bg-[#5E81F4] hover:bg-[#5E81F4]/90 text-white text-sm font-bold rounded-lg transition-all disabled:opacity-70 shadow-sm shadow-[#5E81F4]/20 flex items-center gap-2"
+              className="px-3.5 py-2 md:px-5 md:py-2.5 bg-[#5E81F4] hover:bg-[#5E81F4]/90 text-white text-xs md:text-sm font-bold rounded-lg transition-all disabled:opacity-70 shadow-sm shadow-[#5E81F4]/20 flex items-center gap-1.5 md:gap-2"
             >
               <span>{isLoggingIn ? 'Autenticando...' : 'Acessar Painel'}</span>
-              {!isLoggingIn && <ArrowRight className="w-4 h-4" />}
+              {!isLoggingIn && <ArrowRight className="w-3.5 h-3.5 md:w-4 md:h-4" />}
             </button>
           </div>
         </div>
@@ -130,7 +213,7 @@ export function Landing() {
           <span className="text-xs font-bold tracking-wider uppercase text-[#5E81F4]">Plataforma ativa — IA para Seguros</span>
         </div>
         
-        <h1 className="animate-fade-in-up delay-100 text-5xl md:text-7xl font-black tracking-tighter mb-6 leading-[0.95]">
+        <h1 className="animate-fade-in-up delay-100 text-4xl sm:text-5xl md:text-7xl font-black tracking-tighter mb-6 leading-[0.95]">
           <span className="bg-clip-text text-transparent bg-gradient-to-b from-slate-900 to-slate-600 dark:from-white dark:to-slate-400">
             Atendimento inteligente.
           </span>
@@ -143,20 +226,20 @@ export function Landing() {
           Reduza o tempo de espera e qualifique leads em tempo real.
         </p>
 
-        <div className="animate-fade-in-up delay-300 flex justify-center gap-4">
+        <div className="animate-fade-in-up delay-300 flex flex-col sm:flex-row justify-center items-center gap-3 sm:gap-4 max-w-xs sm:max-w-none mx-auto">
           <button
             onClick={() => {
               const event = new CustomEvent('openChatWidget');
               window.dispatchEvent(event);
             }}
-            className="px-7 py-3.5 bg-[#5E81F4] text-white font-bold rounded-lg hover:bg-[#5E81F4]/90 transition-all shadow-lg shadow-[#5E81F4]/20 flex items-center gap-2 text-sm"
+            className="w-full sm:w-auto px-7 py-3.5 bg-[#5E81F4] text-white font-bold rounded-lg hover:bg-[#5E81F4]/90 transition-all shadow-lg shadow-[#5E81F4]/20 flex items-center justify-center gap-2 text-sm"
           >
             <span>Testar Demonstração</span>
             <ChevronRight className="w-4 h-4" />
           </button>
           <button
             onClick={handleLogin}
-            className="px-7 py-3.5 bg-white dark:bg-slate-900 text-slate-800 dark:text-white font-bold rounded-lg hover:bg-[#F6F6F6] dark:hover:bg-slate-800 border border-[#ECECF2] dark:border-slate-800 transition-all shadow-sm text-sm"
+            className="w-full sm:w-auto px-7 py-3.5 bg-white dark:bg-slate-900 text-slate-800 dark:text-white font-bold rounded-lg hover:bg-[#F6F6F6] dark:hover:bg-slate-800 border border-[#ECECF2] dark:border-slate-800 transition-all shadow-sm text-sm"
           >
             Falar com Especialista
           </button>
@@ -420,19 +503,18 @@ export function Landing() {
 
       {/* CTA Final Section */}
       <section className="relative z-10 max-w-4xl mx-auto px-6 pb-24">
-        <div className="bg-slate-900 dark:bg-slate-900 p-10 md:p-14 rounded-2xl text-center relative overflow-hidden animate-glow-pulse">
-          <div className="absolute inset-0 bg-gradient-to-br from-[#5E81F4]/10 to-[#9698D6]/10 pointer-events-none"></div>
+        <div className="bg-white dark:bg-slate-900 border border-[#ECECF2] dark:border-slate-800 p-10 md:p-14 rounded-2xl text-center relative overflow-hidden animate-glow-pulse shadow-sm">
+          <div className="absolute inset-0 bg-gradient-to-br from-[#5E81F4]/5 to-[#9698D6]/5 dark:from-[#5E81F4]/10 dark:to-[#9698D6]/10 pointer-events-none"></div>
           <div className="relative z-10">
-            <h2 className="text-3xl font-black text-white mb-4 tracking-tight">Pronto para transformar seu atendimento?</h2>
-            <p className="text-sm text-slate-400 mb-8 max-w-lg mx-auto leading-relaxed font-normal">
+            <h2 className="text-3xl font-black text-slate-900 dark:text-white mb-4 tracking-tight">Pronto para transformar seu atendimento?</h2>
+            <p className="text-sm text-[#8181A5] dark:text-slate-300 mb-8 max-w-lg mx-auto leading-relaxed font-normal">
               Entre em contato conosco para desenharmos uma solução personalizada para o tamanho e as necessidades da sua operação.
             </p>
             <button 
               onClick={handleLogin}
-              className="px-8 py-3.5 bg-[#5E81F4] text-white font-bold rounded-lg hover:bg-[#5E81F4]/90 transition-all shadow-lg shadow-[#5E81F4]/30 text-sm flex items-center gap-2 mx-auto"
+              className="px-8 py-3.5 bg-[#5E81F4] text-white font-bold rounded-lg hover:bg-[#5E81F4]/90 transition-all shadow-lg shadow-[#5E81F4]/30 text-sm flex items-center gap-2 mx-auto cursor-pointer"
             >
               <span>Começar Agora</span>
-              <ArrowRight className="w-4 h-4" />
             </button>
           </div>
         </div>
@@ -455,6 +537,201 @@ export function Landing() {
 
       {/* Chat Widget */}
       <ChatWidget />
+
+      {/* Unified Premium Login Modal */}
+      {showLoginModal && (
+        <div 
+          id="login-modal" 
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 animate-fade-in"
+        >
+          {/* Backdrop Blur */}
+          <div 
+            id="login-modal-backdrop"
+            className="absolute inset-0 bg-slate-950/70 backdrop-blur-md transition-opacity" 
+            onClick={() => {
+              if (!isLoggingIn) setShowLoginModal(false);
+            }}
+          />
+          
+          {/* Modal Container */}
+          <div 
+            id="login-modal-container"
+            className="relative bg-white dark:bg-slate-900 border border-[#ECECF2] dark:border-slate-800 rounded-2xl w-full max-w-md p-8 shadow-2xl transition-all animate-scale-in"
+          >
+            {/* Modal Header */}
+            <div className="flex justify-between items-center mb-6">
+              <h3 className="text-xl font-black text-slate-900 dark:text-white tracking-tight">
+                Portal de Acesso
+              </h3>
+              <button 
+                id="login-close"
+                type="button"
+                disabled={isLoggingIn}
+                onClick={() => setShowLoginModal(false)}
+                className="text-xs font-bold text-[#8181A5] hover:text-slate-900 dark:hover:text-white uppercase tracking-wider transition-colors disabled:opacity-50 cursor-pointer"
+              >
+                Fechar
+              </button>
+            </div>
+
+            {/* Error Message */}
+            {loginError && (
+              <div 
+                id="login-error-message"
+                className="mb-4 p-3 bg-red-500/10 border border-red-500/20 text-red-500 text-xs font-bold rounded-lg text-center"
+              >
+                {loginError}
+              </div>
+            )}
+
+            {/* Success Message */}
+            {loginSuccessMessage && (
+              <div 
+                id="login-success-message"
+                className="mb-4 p-3 bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 dark:text-emerald-400 text-xs font-bold rounded-lg text-center"
+              >
+                {loginSuccessMessage}
+              </div>
+            )}
+
+            {/* Form */}
+            <form onSubmit={handleEmailLogin} className="space-y-4">
+              <div>
+                <label className="block text-[10px] font-bold text-[#8181A5] uppercase tracking-wider mb-1.5">
+                  E-mail Corporativo
+                </label>
+                <div className="relative">
+                  <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 dark:text-slate-650 pointer-events-none" />
+                  <input 
+                    id="login-email"
+                    type="email"
+                    required
+                    disabled={isLoggingIn}
+                    value={loginEmail}
+                    onChange={(e) => setLoginEmail(e.target.value)}
+                    placeholder="nome@empresa.com.br"
+                    className="w-full pl-10 pr-4 py-3 bg-[#F6F6F6] dark:bg-slate-950 border border-[#ECECF2] dark:border-slate-800 rounded-lg text-sm text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:border-[#5E81F4] transition-colors disabled:opacity-60 font-semibold"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <div className="flex justify-between items-center mb-1.5">
+                  <label className="block text-[10px] font-bold text-[#8181A5] uppercase tracking-wider">
+                    Senha
+                  </label>
+                  <button
+                    id="login-toggle-password"
+                    type="button"
+                    disabled={isLoggingIn}
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="text-[10px] font-bold text-[#5E81F4] uppercase tracking-wider hover:underline disabled:opacity-50"
+                  >
+                    {showPassword ? 'Ocultar' : 'Mostrar'}
+                  </button>
+                </div>
+                <div className="relative">
+                  <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 dark:text-slate-650 pointer-events-none" />
+                  <input 
+                    id="login-password"
+                    type={showPassword ? 'text' : 'password'}
+                    required
+                    disabled={isLoggingIn}
+                    value={loginPassword}
+                    onChange={(e) => setLoginPassword(e.target.value)}
+                    placeholder="Sua senha corporativa"
+                    className="w-full pl-10 pr-4 py-3 bg-[#F6F6F6] dark:bg-slate-950 border border-[#ECECF2] dark:border-slate-800 rounded-lg text-sm text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:border-[#5E81F4] transition-colors disabled:opacity-60 font-semibold"
+                  />
+                </div>
+                <div className="flex justify-end mt-1.5">
+                  <button
+                    id="login-forgot-password"
+                    type="button"
+                    disabled={isLoggingIn}
+                    onClick={handlePasswordRecovery}
+                    className="text-[10px] font-bold text-[#8181A5] hover:text-[#5E81F4] uppercase tracking-wider transition-colors disabled:opacity-50 cursor-pointer"
+                  >
+                    Esqueci minha senha
+                  </button>
+                </div>
+              </div>
+
+              <button 
+                id="login-submit"
+                type="submit"
+                disabled={isLoggingIn}
+                className="w-full py-3 bg-[#5E81F4] hover:bg-[#5E81F4]/90 text-white text-sm font-bold rounded-lg transition-all disabled:opacity-70 shadow-sm shadow-[#5E81F4]/20 flex items-center justify-center cursor-pointer"
+              >
+                {isLoggingIn ? 'Verificando...' : 'Entrar'}
+              </button>
+            </form>
+
+            {/* Separator */}
+            <div className="relative my-6 text-center">
+              <div className="absolute inset-0 flex items-center">
+                <div className="w-full border-t border-[#ECECF2] dark:border-slate-800"></div>
+              </div>
+              <span className="relative bg-white dark:bg-slate-900 px-3 text-[10px] font-bold text-[#8181A5] uppercase tracking-wider">
+                Ou continue com
+              </span>
+            </div>
+
+            {/* Google SSO Button */}
+            <button 
+              id="login-google"
+              type="button"
+              onClick={handleGoogleLogin}
+              disabled={isLoggingIn}
+              className="w-full py-3 bg-white dark:bg-slate-950 border border-[#ECECF2] dark:border-slate-800 hover:bg-[#F6F6F6] dark:hover:bg-slate-900 text-slate-800 dark:text-white text-sm font-bold rounded-lg transition-all shadow-sm flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+            >
+              <Chrome className="w-4 h-4 text-[#5E81F4] dark:text-blue-400 shrink-0" />
+              <span>Entrar com Conta Google</span>
+            </button>
+
+            {/* Developer Helper Panel (Only in DEV) */}
+            {import.meta.env.DEV && (
+              <div 
+                id="login-dev-panel" 
+                className="mt-6 pt-6 border-t border-[#ECECF2] dark:border-slate-800"
+              >
+                <p className="text-[10px] font-bold text-[#8181A5] uppercase tracking-widest text-center mb-2">
+                  Acesso Rápido de Testes (DEV)
+                </p>
+                <div className="grid grid-cols-2 gap-2">
+                  <button 
+                    id="login-dev-fill"
+                    type="button"
+                    disabled={isLoggingIn}
+                    onClick={() => {
+                      setLoginEmail('admin@segurabot.com.br');
+                      setLoginPassword('password123');
+                      setLoginError('');
+                      setLoginSuccessMessage('');
+                    }}
+                    className="w-full py-2 bg-[#F6F6F6] hover:bg-[#ECECF2] dark:bg-slate-950 dark:hover:bg-slate-900 border border-dashed border-[#ECECF2] dark:border-slate-800 text-[10px] font-bold text-[#5E81F4] uppercase tracking-wider rounded-lg transition-colors cursor-pointer disabled:opacity-50 text-center"
+                  >
+                    Administrador
+                  </button>
+                  <button 
+                    id="login-dev-fill-atendente"
+                    type="button"
+                    disabled={isLoggingIn}
+                    onClick={() => {
+                      setLoginEmail('atendente@segurabot.com.br');
+                      setLoginPassword('password123');
+                      setLoginError('');
+                      setLoginSuccessMessage('');
+                    }}
+                    className="w-full py-2 bg-[#F6F6F6] hover:bg-[#ECECF2] dark:bg-slate-950 dark:hover:bg-slate-900 border border-dashed border-[#ECECF2] dark:border-slate-800 text-[10px] font-bold text-[#7CE7AC] uppercase tracking-wider rounded-lg transition-colors cursor-pointer disabled:opacity-50 text-center"
+                  >
+                    Atendente
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

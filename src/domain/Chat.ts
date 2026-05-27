@@ -19,7 +19,10 @@ export interface ChatSession {
   updatedAt: string;
   createdAt: string;
   messages?: Message[];
-  status?: 'ia' | 'aguardando_humano' | 'humano';
+  status?: 'ia' | 'aguardando_humano' | 'humano' | 'concluido';
   operatorName?: string;
+  clientTyping?: boolean;
+  operatorTyping?: boolean;
 }
+
 

@@ -14,6 +14,16 @@ export interface KnowledgeBaseEntry {
   question: string;
   answer: string;
   source: string;
+  sourceId?: string; // ID da fonte geradora
+}
+
+export interface KnowledgeSource {
+  id?: string;
+  name: string;
+  type: 'pdf' | 'csv' | 'json' | 'web' | 'manual';
+  status: 'processing' | 'completed' | 'error';
+  chunkCount: number;
+  createdAt: string;
 }
 
 export enum OperationType {
@@ -65,6 +75,7 @@ export interface CustomerProfile {
   lifeStage?: string; // Para oportunidades de cross-sell
   riskScore?: number; // Indicador de Risco / LTV (0-100)
   aiSummary?: string; // Resumo gerado por IA do histórico
+  role?: 'cliente' | 'atendente' | 'admin';
 }
 
 export interface SupportTicket {
@@ -74,4 +85,21 @@ export interface SupportTicket {
   status: 'aberto' | 'em_andamento' | 'fechado';
   resolution?: string;
   createdAt: string;
+}
+
+export interface AnalyticsEvent {
+  id?: string;
+  eventType: 'page_view' | 'chat_click' | 'message_send' | 'conversion';
+  sessionId: string;
+  userId?: string;
+  timestamp: string;
+}
+
+export interface AnalyticsSummary {
+  totalVisitors: number;
+  chatClicks: number;
+  messageSends: number;
+  conversions: number;
+  bounceRate: number;
+  eventsList: AnalyticsEvent[];
 }

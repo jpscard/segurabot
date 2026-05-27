@@ -45,10 +45,15 @@ import { FirebaseKnowledgeBaseRepository } from '../../infrastructure/FirebaseKn
 import { FirebaseCustomerRepository } from '../../infrastructure/FirebaseCustomerRepository';
 import { GeminiAssistantService } from '../../infrastructure/GeminiAssistantService';
 import { OllamaAssistantService } from '../../infrastructure/OllamaAssistantService';
+import { DynamicAssistantService } from '../../infrastructure/DynamicAssistantService';
 import { ProcessUserMessageUseCase } from '../../application/ProcessUserMessageUseCase';
 
 export function Dashboard() {
   const [currentView, setCurrentView] = useState<'chat' | 'crm'>('chat');
+  const [crmTab, setCrmTab] = useState<'dados' | 'chamados' | 'chat' | 'rag' | 'analytics' | 'ajustes_ia'>('dados');
+  const [clientSubView, setClientSubView] = useState<'chat' | 'seguros'>('chat');
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [mobileActiveSubView, setMobileActiveSubView] = useState<'list' | 'content'>('list');
   const [sessions, setSessions] = useState<ChatSession[]>([]);
   const [activeSession, setActiveSession] = useState<ChatSession | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
@@ -66,7 +71,7 @@ export function Dashboard() {
   const recognitionRef = useRef<any>(null);
   const baseTranscriptRef = useRef('');
   
-  const { provider, setProvider, geminiApiKey, setGeminiApiKey, ollamaModel, setOllamaModel } = useSettings();
+  const { provider, setProvider, geminiApiKey, setGeminiApiKey, ollamaModel, setOllamaModel, ollamaBaseUrl } = useSettings();
   const { theme, setTheme } = useTheme();
   const user = auth.currentUser;
 
@@ -74,20 +79,20 @@ export function Dashboard() {
   const [availableModels, setAvailableModels] = useState<string[]>([]);
   const [ollamaOnline, setOllamaOnline] = useState<boolean>(false);
 
-  // Estados para Modo Demo e Roles
-  const [demoMode, setDemoMode] = useState(false);
-  const [demoRole, setDemoRole] = useState<'cliente' | 'atendente' | 'admin'>('cliente');
-
   // Lógica Real de Roles
-  const isRealAdmin = user?.email?.endsWith('@segurabot.com.br') || user?.email === 'admin@segurabot.com.br';
-  const isRealAtendente = user?.email === 'atendente@segurabot.com.br';
+  const isRealAdmin = (user?.email?.endsWith('@segurabot.com.br') && user?.email !== 'atendente@segurabot.com.br') || user?.email === 'admin@segurabot.com.br' || profile?.role === 'admin';
+  const isRealAtendente = user?.email === 'atendente@segurabot.com.br' || profile?.role === 'atendente';
   
-  // Role Atual (usa demo se ativo, senão usa a real)
-  const currentRole = demoMode ? demoRole : (isRealAdmin ? 'admin' : (isRealAtendente ? 'atendente' : 'cliente'));
+  // Role Atual baseada no perfil real do banco de dados (Firestore)
+  const currentRole = isRealAdmin ? 'admin' : (isRealAtendente ? 'atendente' : 'cliente');
 
   const fetchOllamaModels = async () => {
     try {
-      const response = await fetch('http://localhost:11434/api/tags');
+      const headers: Record<string, string> = {};
+      if (ollamaBaseUrl && ollamaBaseUrl.includes('.loca.lt')) {
+        headers['bypass-tunnel-reminder'] = 'true';
+      }
+      const response = await fetch(`${ollamaBaseUrl}/api/tags`, { headers });
       if (!response.ok) {
         throw new Error('Erro ao buscar tags do Ollama');
       }
@@ -115,7 +120,7 @@ export function Dashboard() {
     if (provider === 'ollama') {
       fetchOllamaModels();
     }
-  }, [provider]);
+  }, [provider, ollamaBaseUrl]);
 
   // Initialize Speech Recognition on mount
   useEffect(() => {
@@ -214,6 +219,56 @@ export function Dashboard() {
 
     const unsubscribe = customerRepo.subscribeToCustomerProfile(user.uid, (data) => {
       setProfile(data);
+
+      if (!data) {
+        if (user.email === 'admin@segurabot.com.br') {
+          customerRepo.saveCustomerProfile(user.uid, {
+            userId: user.uid,
+            email: user.email,
+            name: 'Administrador SeguraBot',
+            phone: '',
+            activePolicies: [],
+            policies: [],
+            claims: [],
+            documents: [],
+            loyaltyTier: 'Padrão',
+            lifeStage: '',
+            riskScore: 0,
+            aiSummary: 'Administrador do sistema SeguraBot.',
+            role: 'admin'
+          }).catch(err => console.error("Erro ao criar perfil admin inicial:", err));
+        } else if (user.email === 'atendente@segurabot.com.br') {
+          customerRepo.saveCustomerProfile(user.uid, {
+            userId: user.uid,
+            email: user.email,
+            name: 'Atendente SeguraBot',
+            phone: '',
+            activePolicies: [],
+            policies: [],
+            claims: [],
+            documents: [],
+            loyaltyTier: 'Padrão',
+            lifeStage: '',
+            riskScore: 0,
+            aiSummary: 'Operador de suporte e atendente da SeguraBot.',
+            role: 'atendente'
+          }).catch(err => console.error("Erro ao criar perfil atendente inicial:", err));
+        }
+      } else {
+        if (user.email === 'admin@segurabot.com.br' && data.role !== 'admin') {
+          customerRepo.saveCustomerProfile(user.uid, {
+            ...data,
+            role: 'admin',
+            name: 'Administrador SeguraBot'
+          }).catch(err => console.error("Erro ao sincronizar papel de admin:", err));
+        } else if (user.email === 'atendente@segurabot.com.br' && data.role !== 'atendente') {
+          customerRepo.saveCustomerProfile(user.uid, {
+            ...data,
+            role: 'atendente',
+            name: 'Atendente SeguraBot'
+          }).catch(err => console.error("Erro ao sincronizar papel de atendente:", err));
+        }
+      }
     });
 
     return () => unsubscribe();
@@ -225,6 +280,11 @@ export function Dashboard() {
       setCurrentView('chat');
     }
   }, [currentRole, currentView]);
+
+  // Reset mobile sub-view when global view changes
+  useEffect(() => {
+    setMobileActiveSubView('list');
+  }, [currentView]);
 
   // Load Sessions
   useEffect(() => {
@@ -264,6 +324,7 @@ export function Dashboard() {
     try {
       const session = await chatRepo.createSession(user.uid, 'Nova Conversa', '');
       setActiveSession(session);
+      setMobileActiveSubView('content');
     } catch (error) {
       handleFirestoreError(error as Error, OperationType.CREATE, `users/${user.uid}/chat_sessions`);
     }
@@ -322,7 +383,7 @@ export function Dashboard() {
     setIsLoading(true);
 
     try {
-      const aiService = provider === 'ollama' ? new OllamaAssistantService(ollamaModel) : geminiService;
+      const aiService = new DynamicAssistantService();
       const useCase = new ProcessUserMessageUseCase(chatRepo, aiService, kbRepo, customerRepo);
 
       await useCase.execute(user.uid, targetSession.id, userMessageContent, (chunk) => {
@@ -346,17 +407,209 @@ export function Dashboard() {
     }
   };
 
+  const renderMeusSegurosView = () => {
+    return (
+      <div className="flex-grow flex-1 flex flex-col bg-[#F6F6F6]/80 dark:bg-slate-950/20 overflow-y-auto p-6 md:p-8 space-y-8 select-none scrollbar-thin">
+        {/* Top Header */}
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-6 border-b border-[#ECECF2] dark:border-slate-800/60 shrink-0">
+          <div className="space-y-1.5">
+            <h1 className="text-xl font-bold text-slate-900 dark:text-white uppercase tracking-wider">
+              Meus Seguros e Coberturas
+            </h1>
+            <p className="text-xs text-slate-500 dark:text-slate-400 font-medium">
+              Consulte suas apólices ativas, limites de cobertura e acompanhe seus sinistros.
+            </p>
+          </div>
+          
+          <span className={cn(
+            "self-start md:self-center px-4 py-2 text-[10px] font-bold rounded-xl uppercase tracking-widest border",
+            profile?.loyaltyTier === 'Silver' ? 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300 border-slate-200/50 dark:border-slate-700' :
+            profile?.loyaltyTier === 'Gold' ? 'bg-amber-500/10 text-amber-600 border-amber-500/20 dark:bg-amber-950/30 dark:text-amber-400 dark:border-transparent' :
+            profile?.loyaltyTier === 'Black' ? 'bg-slate-950 text-white border-slate-900 dark:bg-slate-900 dark:text-slate-200 dark:border-slate-800' :
+            'bg-blue-500/10 text-[#5E81F4] border-[#5E81F4]/20'
+          )}>
+            Status {profile?.loyaltyTier || 'Padrão'}
+          </span>
+        </div>
+
+        {/* Content Grid */}
+        <div className="grid grid-cols-1 xl:grid-cols-12 gap-6 items-start">
+          
+          {/* Col 1: Customer Profile Overview Card */}
+          <div className="xl:col-span-4 bg-white dark:bg-slate-900 border border-[#ECECF2] dark:border-slate-800/80 rounded-2xl p-6 space-y-6 shadow-sm">
+            <div>
+              <p className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-3">Segurado</p>
+              <h2 className="text-base font-bold text-slate-800 dark:text-slate-200 truncate">{profile?.name || 'Cliente Segura'}</h2>
+              <p className="text-xs text-slate-500 dark:text-slate-400 font-normal mt-1 truncate">{profile?.email || user?.email}</p>
+              {profile?.phone && <p className="text-xs text-slate-500 dark:text-slate-400 font-normal mt-0.5 truncate">Tel: {profile.phone}</p>}
+            </div>
+
+            <div className="border-t border-[#ECECF2] dark:border-slate-850 pt-4 space-y-4">
+              <div>
+                <p className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-1.5">Momento de Vida</p>
+                <p className="text-xs font-semibold text-slate-700 dark:text-slate-350">{profile?.lifeStage || 'Não especificado'}</p>
+              </div>
+
+              <div>
+                <p className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-1.5">Score de Risco</p>
+                <div className="flex items-center gap-3">
+                  <div className="flex-1 h-2 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
+                    <div 
+                      className={cn(
+                        "h-full rounded-full transition-all duration-500",
+                        (profile?.riskScore || 0) > 60 ? 'bg-rose-500' :
+                        (profile?.riskScore || 0) > 30 ? 'bg-amber-500' :
+                        'bg-emerald-500'
+                      )}
+                      style={{ width: `${profile?.riskScore || 0}%` }}
+                    />
+                  </div>
+                  <span className="text-xs font-bold text-slate-700 dark:text-slate-300">{profile?.riskScore || 0}%</span>
+                </div>
+              </div>
+
+              {profile?.aiSummary && (
+                <div>
+                  <p className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-1.5">Insights de IA</p>
+                  <p className="text-xs leading-relaxed text-slate-600 dark:text-slate-400 italic font-medium bg-slate-50 dark:bg-slate-950 p-3 rounded-xl border border-slate-100 dark:border-slate-850">
+                    {profile.aiSummary}
+                  </p>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Col 2: Active Policies List */}
+          <div className="xl:col-span-8 space-y-6">
+            
+            {/* Apólices Card */}
+            <div className="bg-white dark:bg-slate-900 border border-[#ECECF2] dark:border-slate-800/80 rounded-2xl p-6 shadow-sm space-y-4">
+              <h3 className="text-xs font-bold text-slate-800 dark:text-slate-200 uppercase tracking-wider">
+                Apólices e Coberturas Ativas
+              </h3>
+              
+              <div className="space-y-4">
+                {profile?.policies && profile.policies.length > 0 ? (
+                  profile.policies.map((policy) => (
+                    <div 
+                      key={policy.id} 
+                      className="p-4 bg-slate-50 dark:bg-slate-950/60 rounded-xl border border-[#ECECF2]/60 dark:border-slate-850 flex flex-col sm:flex-row sm:items-center justify-between gap-4 transition-all duration-200 hover:border-slate-300 dark:hover:border-slate-700"
+                    >
+                      <div className="space-y-1">
+                        <span className="inline-block px-2.5 py-0.5 text-[9px] font-bold uppercase tracking-wider bg-blue-500/10 text-[#5E81F4] rounded-md">
+                          Seguro {policy.type}
+                        </span>
+                        <h4 className="text-xs font-bold text-slate-800 dark:text-slate-255 mt-1.5">
+                          {policy.assetDescription || 'Descrição não informada'}
+                        </h4>
+                        <p className="text-[10px] font-medium text-slate-400 dark:text-slate-500 uppercase tracking-wider font-mono">
+                          Apólice: #{policy.id}
+                        </p>
+                      </div>
+
+                      <div className="flex flex-wrap gap-x-6 gap-y-2 text-xs sm:text-right">
+                        <div>
+                          <p className="text-[9px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest">Cobertura</p>
+                          <p className="font-bold text-slate-700 dark:text-slate-300">{policy.coverageLimits}</p>
+                        </div>
+                        <div>
+                          <p className="text-[9px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest">Prêmio Mensal</p>
+                          <p className="font-bold text-slate-700 dark:text-slate-300">R$ {policy.premiumValue.toFixed(2)}</p>
+                        </div>
+                        <div>
+                          <p className="text-[9px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest">Vigência até</p>
+                          <p className="font-bold text-slate-700 dark:text-slate-350">{policy.expirationDate}</p>
+                        </div>
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  <div className="text-center py-8 bg-slate-50 dark:bg-slate-950/40 rounded-xl border border-dashed border-[#ECECF2] dark:border-slate-800">
+                    <p className="text-xs text-slate-500 dark:text-slate-500 font-medium">Você ainda não tem apólices cadastradas.</p>
+                    <button 
+                      onClick={() => setClientSubView('chat')}
+                      className="mt-3 px-4 py-2 bg-[#5E81F4] hover:bg-[#5E81F4]/90 text-white rounded-lg text-[10px] font-bold uppercase tracking-wider transition-colors cursor-pointer"
+                    >
+                      Simular Seguro
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Sinistros Card */}
+            <div className="bg-white dark:bg-slate-900 border border-[#ECECF2] dark:border-slate-800/80 rounded-2xl p-6 shadow-sm space-y-4">
+              <h3 className="text-xs font-bold text-slate-800 dark:text-slate-200 uppercase tracking-wider">
+                Sinistros e Reclamações
+              </h3>
+
+              <div className="space-y-3.5">
+                {profile?.claims && profile.claims.length > 0 ? (
+                  profile.claims.map((claim) => (
+                    <div 
+                      key={claim.id} 
+                      className="p-3.5 bg-slate-50 dark:bg-slate-950/60 rounded-xl border border-[#ECECF2]/60 dark:border-slate-850 flex flex-col sm:flex-row sm:items-center justify-between gap-4 transition-all duration-200 hover:border-slate-300 dark:hover:border-slate-700"
+                    >
+                      <div className="space-y-1">
+                        <h4 className="text-xs font-bold text-slate-800 dark:text-slate-250 truncate max-w-md">
+                          {claim.description}
+                        </h4>
+                        <p className="text-[9px] font-medium text-slate-400 dark:text-slate-500 uppercase tracking-wider font-mono">
+                          Código Sinistro: #{claim.id} | Aberto em: {claim.openedAt}
+                        </p>
+                      </div>
+
+                      <div className="flex items-center gap-4 sm:text-right shrink-0">
+                        <span className={cn(
+                          "px-2.5 py-1 text-[9px] font-bold rounded uppercase tracking-wider border",
+                          claim.status === 'pago' ? 'bg-emerald-500/10 text-emerald-600 border-emerald-500/20' :
+                          claim.status === 'recusado' ? 'bg-rose-500/10 text-rose-600 border-rose-500/20' :
+                          claim.status === 'em_analise' ? 'bg-amber-500/10 text-amber-600 border-amber-500/20' :
+                          'bg-blue-500/10 text-[#5E81F4] border-[#5E81F4]/20'
+                        )}>
+                          {claim.status === 'pago' ? 'Pago' :
+                           claim.status === 'recusado' ? 'Recusado' :
+                           claim.status === 'em_analise' ? 'Em Análise' :
+                           'Aberto'}
+                        </span>
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  <div className="text-center py-8 bg-slate-50 dark:bg-slate-950/40 rounded-xl border border-dashed border-[#ECECF2] dark:border-slate-800">
+                    <p className="text-xs text-slate-500 dark:text-slate-500 font-medium">Nenhum sinistro em andamento ou registrado.</p>
+                  </div>
+                )}
+              </div>
+            </div>
+
+          </div>
+
+        </div>
+      </div>
+    );
+  };
+
+  // Listen to openMobileMenu events from sub-components
+  useEffect(() => {
+    const openMenu = () => setIsMobileMenuOpen(true);
+    window.addEventListener('openMobileMenu', openMenu);
+    return () => window.removeEventListener('openMobileMenu', openMenu);
+  }, []);
+
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-[#F6F6F6] dark:bg-slate-950 text-slate-800 dark:text-slate-100 transition-colors duration-300 font-sans">
       
       {/* COLUNA 1: Slim Navigation Sidebar (Figma Dashboard 02) */}
-      <aside className="w-[76px] bg-white dark:bg-slate-950 flex flex-col items-center justify-between py-6 border-r border-[#ECECF2] dark:border-slate-800/30 z-20 shrink-0 select-none">
+      <aside className="hidden lg:flex w-[76px] bg-white dark:bg-slate-950 flex-col items-center justify-between py-6 border-r border-[#ECECF2] dark:border-slate-800/30 z-20 shrink-0 select-none">
         
         {/* Brand Circle Logo */}
         <div className="flex flex-col items-center gap-6 w-full">
-          <div className="w-12 h-12 rounded-2xl bg-[#5E81F4] flex items-center justify-center text-white font-bold text-xl shadow-lg shadow-[#5E81F4]/20 tracking-tight">
-            S
-          </div>
+          <img 
+            src={theme === 'dark' ? '/logo-dark.png' : '/logo-light.png'} 
+            alt="SeguraBot Logo" 
+            className="w-16 h-16 object-contain" 
+          />
           
           <div className="w-8 h-[1px] bg-slate-200 dark:bg-slate-800/30" />
           
@@ -419,20 +672,24 @@ export function Dashboard() {
           </button>
 
           {/* Cloud/Local Provider Toggle Button */}
-          <button 
-            onClick={() => setProvider(provider === 'gemini' ? 'ollama' : 'gemini')}
-            className={cn(
-              "p-3 rounded-xl transition-all duration-200 cursor-pointer",
-              provider === 'gemini' 
-                ? "text-[#5E81F4] hover:text-[#5E81F4]/80" 
-                : "text-[#F4BE5E] hover:text-[#F4BE5E]/80 hover:bg-slate-100 dark:hover:bg-slate-900/40"
-            )}
-            title={provider === 'gemini' ? "Usando Nuvem (Gemini)" : "Usando Local (Ollama)"}
-          >
-            {provider === 'gemini' ? <Cloud className="w-5 h-5" /> : <Cpu className="w-5 h-5" />}
-          </button>
+          {(currentRole === 'admin' || currentRole === 'atendente') && (
+            <>
+              <button 
+                onClick={() => setProvider(provider === 'gemini' ? 'ollama' : 'gemini')}
+                className={cn(
+                  "p-3 rounded-xl transition-all duration-200 cursor-pointer",
+                  provider === 'gemini' 
+                    ? "text-[#5E81F4] hover:text-[#5E81F4]/80" 
+                    : "text-[#F4BE5E] hover:text-[#F4BE5E]/80 hover:bg-slate-100 dark:hover:bg-slate-900/40"
+                )}
+                title={provider === 'gemini' ? "Usando Nuvem (Gemini)" : "Usando Local (Ollama)"}
+              >
+                {provider === 'gemini' ? <Cloud className="w-5 h-5" /> : <Cpu className="w-5 h-5" />}
+              </button>
 
-          <div className="w-8 h-[1px] bg-slate-200 dark:bg-slate-800/30" />
+              <div className="w-8 h-[1px] bg-slate-200 dark:bg-slate-800/30" />
+            </>
+          )}
 
           {/* LogOut Button */}
           <button 
@@ -447,7 +704,26 @@ export function Dashboard() {
       </aside>
 
       {/* COLUNA 2: Context Sidebar / List & Config Panel */}
-      <aside className="w-80 bg-white dark:bg-slate-900 border-r border-[#ECECF2] dark:border-slate-800/60 flex flex-col shrink-0 z-10 select-none">
+      <aside className={cn(
+        "bg-white dark:bg-slate-900 border-r border-[#ECECF2] dark:border-slate-800/60 flex flex-col shrink-0 z-10 select-none transition-all duration-300",
+        mobileActiveSubView === 'list' ? "w-full flex lg:w-80" : "hidden lg:flex lg:w-80"
+      )}>
+        
+        {/* Mobile Sticky Top Navigation Bar inside Sidebar */}
+        <div className="lg:hidden h-14 bg-white dark:bg-slate-900 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between px-5 select-none z-10 shrink-0">
+          <button 
+            onClick={() => setIsMobileMenuOpen(true)}
+            className="text-xs font-bold text-[#5E81F4] uppercase tracking-wider cursor-pointer"
+          >
+            Menu
+          </button>
+          <span className="text-xs font-bold text-slate-800 dark:text-slate-200 uppercase tracking-wider">
+            {currentView === 'chat' ? 'Atendimentos' : 'Painel CRM'}
+          </span>
+          <div className="w-8 h-8 rounded-lg bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 flex items-center justify-center font-bold text-xs">
+            {(profile?.name || user?.displayName || 'U').slice(0, 1).toUpperCase()}
+          </div>
+        </div>
         
         {/* User Info Header */}
         <div className="p-5 border-b border-slate-100 dark:border-slate-800/60 flex items-center justify-between">
@@ -456,11 +732,11 @@ export function Dashboard() {
               <img src={user.photoURL} alt="Profile" className="w-9 h-9 rounded-xl border border-slate-200 dark:border-slate-800" />
             ) : (
               <div className="w-9 h-9 bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded-xl flex items-center justify-center font-bold text-sm border border-blue-100 dark:border-blue-900/20">
-                {user?.displayName ? user.displayName.slice(0, 1).toUpperCase() : 'U'}
+                {(profile?.name || user?.displayName || 'U').slice(0, 1).toUpperCase()}
               </div>
             )}
             <div className="min-w-0">
-              <p className="text-sm font-semibold text-slate-800 dark:text-slate-200 truncate">{user?.displayName || 'Cliente Segura'}</p>
+              <p className="text-sm font-semibold text-slate-800 dark:text-slate-200 truncate">{profile?.name || user?.displayName || 'Cliente Segura'}</p>
               <div className="flex items-center gap-1.5 mt-0.5">
                 <div className="w-1.5 h-1.5 rounded-full bg-[#7CE7AC] animate-pulse" />
                 <span className="text-[10px] uppercase font-mono tracking-wider text-slate-400 dark:text-slate-500 font-semibold">
@@ -486,6 +762,33 @@ export function Dashboard() {
                 </button>
               </div>
 
+              {currentRole === 'cliente' && (
+                <div className="px-4 py-2 border-b border-slate-100 dark:border-slate-800/60 flex gap-2 shrink-0 select-none">
+                  <button
+                    onClick={() => setClientSubView('chat')}
+                    className={cn(
+                      "flex-1 py-2 px-3 text-xs font-bold rounded-xl transition-all duration-200 uppercase tracking-wider cursor-pointer border",
+                      clientSubView === 'chat'
+                        ? "bg-[#5E81F4] text-white border-[#5E81F4] shadow-sm"
+                        : "bg-slate-50 dark:bg-slate-800/40 text-slate-655 border-transparent hover:bg-slate-100 dark:hover:bg-slate-800"
+                    )}
+                  >
+                    Conversas
+                  </button>
+                  <button
+                    onClick={() => setClientSubView('seguros')}
+                    className={cn(
+                      "flex-1 py-2 px-3 text-xs font-bold rounded-xl transition-all duration-200 uppercase tracking-wider cursor-pointer border",
+                      clientSubView === 'seguros'
+                        ? "bg-[#5E81F4] text-white border-[#5E81F4] shadow-sm"
+                        : "bg-slate-50 dark:bg-slate-800/40 text-slate-655 border-transparent hover:bg-slate-100 dark:hover:bg-slate-800"
+                    )}
+                  >
+                    Meus Seguros
+                  </button>
+                </div>
+              )}
+
               {/* Chat History List */}
               <div className="flex-1 overflow-y-auto px-3 py-4 space-y-2 scrollbar-thin">
                 <p className="px-3 text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-3">CONVERSAS RECENTES</p>
@@ -493,7 +796,7 @@ export function Dashboard() {
                 {sessions.map((session) => (
                   <div 
                     key={session.id}
-                    onClick={() => { setActiveSession(session); }}
+                    onClick={() => { setActiveSession(session); setMobileActiveSubView('content'); }}
                     className={cn(
                       "p-3 rounded-xl cursor-pointer transition-all border group relative select-none",
                       activeSession?.id === session.id 
@@ -533,12 +836,46 @@ export function Dashboard() {
               </div>
             </>
           ) : (
-            <div className="flex-1 overflow-y-auto px-4 py-6 space-y-6">
+            <div className="flex-1 overflow-y-auto px-4 py-6 space-y-6 scrollbar-thin">
               <div>
-                <p className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-3">CRM DASHBOARD</p>
-                <div className="space-y-2">
+                <p className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-3">
+                  Menu de Gestão (CRM)
+                </p>
+                <div className="space-y-1.5">
+                  {[
+                    { id: 'dados', label: 'Dados do Segurado', icon: User },
+                    { id: 'chamados', label: 'Chamados de Suporte', icon: Sliders },
+                    { id: 'chat', label: 'Chat em Tempo Real', icon: MessageSquare },
+                    { id: 'rag', label: 'Base de Conhecimento', icon: Database },
+                    { id: 'analytics', label: 'Web Analytics', icon: Activity },
+                    { id: 'ajustes_ia', label: 'Ajustes IA', icon: Settings }
+                  ].map((tab) => {
+                    const IconComponent = tab.icon;
+                    return (
+                      <button
+                        key={tab.id}
+                        onClick={() => { setCrmTab(tab.id as any); setMobileActiveSubView('content'); }}
+                        className={cn(
+                          "w-full text-left py-2.5 px-4 rounded-xl text-xs font-bold transition-all duration-200 uppercase tracking-wider cursor-pointer border border-transparent flex items-center gap-2.5",
+                          crmTab === tab.id
+                            ? "bg-[#5E81F4] text-white shadow-sm shadow-[#5E81F4]/10"
+                            : "bg-slate-50 dark:bg-slate-800/40 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800"
+                        )}
+                      >
+                        <IconComponent className="w-4 h-4 shrink-0" />
+                        <span>{tab.label}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Render dynamic info cards based on active CRM tab to make it look premium */}
+              {crmTab === 'dados' && (
+                <div className="space-y-3 pt-2 border-t border-slate-100 dark:border-slate-800/60 animate-fadeIn">
+                  <p className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest">Resumo do Cliente</p>
                   <div className="p-3 bg-slate-50 dark:bg-slate-800/40 border border-slate-100 dark:border-slate-800/50 rounded-xl">
-                    <p className="text-[10px] uppercase font-mono font-semibold text-slate-400 dark:text-slate-500">Apólices Ativas</p>
+                    <p className="text-[10px] uppercase font-mono font-semibold text-slate-400 dark:text-slate-500 font-semibold">Apólices Ativas</p>
                     <p className="text-sm font-bold text-slate-800 dark:text-slate-200 mt-1">
                       {profile?.policies?.length === 1 
                         ? '1 Cobertura' 
@@ -546,7 +883,7 @@ export function Dashboard() {
                     </p>
                   </div>
                   <div className="p-3 bg-slate-50 dark:bg-slate-800/40 border border-slate-100 dark:border-slate-800/50 rounded-xl">
-                    <p className="text-[10px] uppercase font-mono font-semibold text-slate-400 dark:text-slate-500">Sinistros Reportados</p>
+                    <p className="text-[10px] uppercase font-mono font-semibold text-slate-400 dark:text-slate-500 font-semibold">Sinistros Reportados</p>
                     <p className="text-sm font-bold text-slate-800 dark:text-slate-200 mt-1">
                       {(() => {
                         const count = profile?.claims?.filter(c => c.status !== 'pago' && c.status !== 'recusado').length ?? 0;
@@ -555,22 +892,22 @@ export function Dashboard() {
                     </p>
                   </div>
                   <div className="p-3 bg-slate-50 dark:bg-slate-800/40 border border-slate-100 dark:border-slate-800/50 rounded-xl">
-                    <p className="text-[10px] uppercase font-mono font-semibold text-slate-400 dark:text-slate-500">Categoria de Fidelidade</p>
+                    <p className="text-[10px] uppercase font-mono font-semibold text-slate-400 dark:text-slate-500 font-semibold">Categoria de Fidelidade</p>
                     <p className="text-sm font-bold text-slate-800 dark:text-slate-200 mt-1">
                       Status {profile?.loyaltyTier || 'Padrão'}
                     </p>
                   </div>
                 </div>
-              </div>
+              )}
 
-              {/* Botão de Upload - Apenas para Admin */}
-              {currentRole === 'admin' && (
-                <div className="space-y-2">
-                  <p className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest">AÇÕES DE ADMIN</p>
+              {/* Botão de Treinamento RAG - Apenas para Admin no menu RAG */}
+              {crmTab === 'rag' && currentRole === 'admin' && (
+                <div className="space-y-2 pt-2 border-t border-slate-100 dark:border-slate-800/60 animate-fadeIn">
+                  <p className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest">Ações Rápidas (RAG)</p>
                   <button 
                     onClick={handleTrainBotClick}
                     disabled={isTraining}
-                    className="w-full py-2.5 px-4 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl hover:border-blue-400 dark:hover:border-blue-500 hover:text-blue-600 dark:hover:text-blue-400 transition-all duration-200 text-xs font-semibold text-slate-600 dark:text-slate-300 disabled:opacity-50 flex items-center justify-center gap-2"
+                    className="w-full py-2.5 px-4 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl hover:border-blue-400 dark:hover:border-blue-500 hover:text-blue-600 dark:hover:text-blue-400 transition-all duration-200 text-xs font-semibold text-slate-600 dark:text-slate-300 disabled:opacity-50 flex items-center justify-center gap-2 cursor-pointer"
                   >
                     <FileText className="w-3.5 h-3.5" />
                     <span>{isTraining ? 'Processando...' : 'Treinar Base de Conhecimento'}</span>
@@ -588,152 +925,38 @@ export function Dashboard() {
           )}
         </div>
 
-        {/* Dynamic Demo Mode Controller at the Bottom */}
-        <div className="p-4 mt-auto border-t border-slate-100 dark:border-slate-800/60 bg-slate-50/40 dark:bg-slate-900/30 space-y-3">
-          
-          {/* Gemini API Key Input */}
-          {provider === 'gemini' && (
-            <div className="p-3 bg-white dark:bg-slate-800 border border-slate-200/60 dark:border-slate-800 rounded-xl space-y-2 text-xs shadow-sm">
-              <div className="flex justify-between items-center">
-                <span className="font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider text-[9px]">Chave API Gemini</span>
-                {geminiApiKey && (
-                  <button 
-                    onClick={() => setGeminiApiKey('')}
-                    className="text-[9px] text-rose-500 hover:text-rose-600 font-bold uppercase tracking-wider cursor-pointer"
-                    title="Limpar chave salva"
-                  >
-                    Limpar
-                  </button>
-                )}
-              </div>
-              <input
-                type="password"
-                value={geminiApiKey}
-                onChange={(e) => setGeminiApiKey(e.target.value)}
-                placeholder="Inserir chave própria (AIzaSy...)"
-                className="w-full px-2.5 py-1.5 bg-slate-50 dark:bg-slate-950 border border-slate-200/60 dark:border-slate-800 rounded-lg text-[10px] outline-none focus:border-blue-500/50 text-slate-700 dark:text-slate-300 placeholder:text-slate-400 dark:placeholder:text-slate-600 transition-all font-mono"
-              />
-            </div>
-          )}
 
-          {/* Ollama Model Selection */}
-          {provider === 'ollama' && (
-            <div className="p-3 bg-white dark:bg-slate-800 border border-slate-200/60 dark:border-slate-800 rounded-xl space-y-2 text-xs shadow-sm">
-              <div className="flex justify-between items-center">
-                <span className="font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider text-[9px]">Modelo Ollama</span>
-                <span 
-                  className={cn("w-1.5 h-1.5 rounded-full", ollamaOnline ? "bg-emerald-500" : "bg-rose-500")} 
-                  title={ollamaOnline ? "Ollama Online" : "Ollama Offline"} 
-                />
-              </div>
-              <div className="flex flex-col gap-1.5">
-                <select
-                  value={ollamaModel}
-                  onChange={(e) => setOllamaModel(e.target.value)}
-                  className="w-full px-2.5 py-1.5 bg-slate-50 dark:bg-slate-950 border border-slate-200/60 dark:border-slate-800 rounded-lg text-[10px] outline-none focus:border-blue-500/50 text-slate-700 dark:text-slate-300 transition-all font-sans font-semibold cursor-pointer"
-                >
-                  {availableModels.length > 0 ? (
-                    availableModels.map((model) => (
-                      <option key={model} value={model}>
-                        {model}
-                      </option>
-                    ))
-                  ) : (
-                    <>
-                      <option value="llama3">llama3</option>
-                      <option value="gemma">gemma</option>
-                      <option value="mistral">mistral</option>
-                      <option value="phi3">phi3</option>
-                    </>
-                  )}
-                </select>
-                
-                {!ollamaOnline && (
-                  <div className="flex flex-col gap-1">
-                    <p className="text-[9px] text-rose-500 leading-tight font-semibold">
-                      Ollama offline em http://localhost:11434.
-                    </p>
-                    <button
-                      onClick={fetchOllamaModels}
-                      className="w-full py-1 text-[9px] font-bold text-[#5E81F4] hover:text-[#5E81F4]/80 uppercase tracking-wider text-left cursor-pointer transition-colors outline-none"
-                    >
-                      Tentar Conectar
-                    </button>
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-
-          <div className="p-3 bg-white dark:bg-slate-800 border border-slate-200/60 dark:border-slate-800 rounded-xl space-y-2 text-xs shadow-sm">
-            <div className="flex justify-between items-center">
-              <span className="font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider text-[9px]">Modo Demo</span>
-              <button 
-                onClick={() => setDemoMode(!demoMode)}
-                className={cn(
-                  "px-2 py-1 rounded-md text-[10px] font-bold transition-all uppercase tracking-wider",
-                  demoMode 
-                    ? "bg-emerald-600 text-white hover:bg-emerald-700" 
-                    : "bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-600"
-                )}
-              >
-                {demoMode ? 'Ativo' : 'Inativo'}
-              </button>
-            </div>
-            
-            {demoMode && (
-              <div className="flex flex-col gap-1.5 pt-1.5">
-                <button 
-                  onClick={() => setDemoRole('cliente')}
-                  className={cn(
-                    "w-full py-2 rounded-lg text-[10px] font-bold transition-all uppercase tracking-wider cursor-pointer border border-transparent", 
-                    demoRole === 'cliente' 
-                      ? "bg-blue-600 text-white shadow-sm" 
-                      : "bg-slate-50 dark:bg-slate-700/50 text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700 border-slate-200/60 dark:border-slate-800"
-                  )}
-                >
-                  Cliente
-                </button>
-                <button 
-                  onClick={() => setDemoRole('atendente')}
-                  className={cn(
-                    "w-full py-2 rounded-lg text-[10px] font-bold transition-all uppercase tracking-wider cursor-pointer border border-transparent", 
-                    demoRole === 'atendente' 
-                      ? "bg-blue-600 text-white shadow-sm" 
-                      : "bg-slate-50 dark:bg-slate-700/50 text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700 border-slate-200/60 dark:border-slate-800"
-                  )}
-                >
-                  Atendente
-                </button>
-                <button 
-                  onClick={() => setDemoRole('admin')}
-                  className={cn(
-                    "w-full py-2 rounded-lg text-[10px] font-bold transition-all uppercase tracking-wider cursor-pointer border border-transparent", 
-                    demoRole === 'admin' 
-                      ? "bg-blue-600 text-white shadow-sm" 
-                      : "bg-slate-50 dark:bg-slate-700/50 text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700 border-slate-200/60 dark:border-slate-800"
-                  )}
-                >
-                  Administrador
-                </button>
-              </div>
-            )}
-          </div>
-        </div>
 
       </aside>
 
       {/* COLUNA 3: Main Display / Working Workspace */}
-      <main className="flex-1 flex flex-col bg-[#F6F6F6]/80 dark:bg-slate-950/20 overflow-hidden relative">
+      <main className={cn(
+        "flex-grow flex-1 flex flex-col bg-[#F6F6F6]/80 dark:bg-slate-950/20 overflow-hidden relative transition-all duration-300",
+        mobileActiveSubView === 'content' ? "w-full flex" : "hidden lg:flex"
+      )}>
         
         {currentView === 'crm' ? (
-          <CrmAdmin />
+          <CrmAdmin 
+            activeTab={crmTab} 
+            setActiveTab={setCrmTab} 
+            currentRole={currentRole} 
+            onBack={() => setMobileActiveSubView('list')} 
+          />
+        ) : clientSubView === 'seguros' && currentRole === 'cliente' ? (
+          renderMeusSegurosView()
         ) : (
           <>
             {/* Active Session Title Header */}
             <div className="h-16 px-6 border-b border-[#ECECF2] dark:border-slate-800/60 bg-white dark:bg-slate-900 flex items-center justify-between shrink-0 select-none z-10">
               <div className="flex items-center gap-3 min-w-0">
-                <div className="w-8 h-8 rounded-lg bg-[#5E81F4]/10 dark:bg-[#5E81F4]/10 flex items-center justify-center text-[#5E81F4] shrink-0">
+                {/* Mobile Back Button */}
+                <button
+                  onClick={() => setMobileActiveSubView('list')}
+                  className="lg:hidden p-2 -ml-2 text-[#5E81F4] hover:text-[#5E81F4]/80 font-bold text-xs uppercase tracking-wider cursor-pointer shrink-0"
+                >
+                  Voltar
+                </button>
+                <div className="hidden sm:flex w-8 h-8 rounded-lg bg-[#5E81F4]/10 dark:bg-[#5E81F4]/10 flex items-center justify-center text-[#5E81F4] shrink-0">
                   <MessageSquare className="w-4 h-4" />
                 </div>
                 <div className="min-w-0">
@@ -980,6 +1203,120 @@ export function Dashboard() {
           </>
         )}
       </main>
-    </div>
-  );
+
+      {/* Mobile Responsive Drawer Overlay */}
+      {isMobileMenuOpen && (
+        <div className="fixed inset-0 z-50 lg:hidden animate-fade-in">
+          {/* Backdrop Blur overlay */}
+          <div 
+            className="absolute inset-0 bg-slate-950/60 backdrop-blur-sm transition-opacity" 
+            onClick={() => setIsMobileMenuOpen(false)}
+          />
+          
+          {/* Slide-over Content Container */}
+          <div className="absolute inset-y-0 left-0 w-72 bg-white dark:bg-slate-900 border-r border-[#ECECF2] dark:border-slate-800 flex flex-col shadow-2xl transition-transform duration-300 ease-out transform translate-x-0">
+            {/* Drawer Header */}
+            <div className="p-5 border-b border-slate-100 dark:border-slate-800/60 flex justify-between items-center">
+              <div className="flex items-center gap-2">
+                <img 
+                  src={theme === 'dark' ? '/logo-dark.png' : '/logo-light.png'} 
+                  alt="SeguraBot Logo" 
+                  className="w-11 h-11 object-contain" 
+                />
+                <span className="text-sm font-black text-slate-800 dark:text-white uppercase tracking-wider">
+                  SeguraBot
+                </span>
+              </div>
+              <button 
+                onClick={() => setIsMobileMenuOpen(false)}
+                className="text-xs font-bold text-[#8181A5] hover:text-slate-800 dark:hover:text-slate-200 uppercase tracking-wider cursor-pointer"
+              >
+                Fechar
+              </button>
+            </div>
+
+            {/* Navigation Options */}
+            <div className="flex-1 overflow-y-auto p-5 space-y-6">
+              <div className="space-y-2">
+                <p className="text-[9px] font-bold text-[#8181A5] uppercase tracking-widest">Navegação Principal</p>
+                <button
+                  onClick={() => { setCurrentView('chat'); setIsMobileMenuOpen(false); }}
+                  className={cn(
+                    "w-full text-left py-3 px-4 rounded-xl text-xs font-bold transition-all duration-200 uppercase tracking-wider cursor-pointer border border-transparent flex items-center gap-3",
+                    currentView === 'chat'
+                      ? "bg-[#5E81F4] text-white shadow-sm shadow-[#5E81F4]/10"
+                      : "bg-slate-50 dark:bg-slate-800/40 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800"
+                  )}
+                >
+                  <MessageSquare className="w-4 h-4" />
+                  <span>Assistente Virtual</span>
+                </button>
+
+                {(currentRole === 'admin' || currentRole === 'atendente') && (
+                  <button
+                    onClick={() => { setCurrentView('crm'); setIsMobileMenuOpen(false); }}
+                    className={cn(
+                      "w-full text-left py-3 px-4 rounded-xl text-xs font-bold transition-all duration-200 uppercase tracking-wider cursor-pointer border border-transparent flex items-center gap-3",
+                      currentView === 'crm'
+                        ? "bg-[#5E81F4] text-white shadow-sm shadow-[#5E81F4]/10"
+                        : "bg-slate-50 dark:bg-slate-800/40 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800"
+                  )}
+                >
+                  <Database className="w-4 h-4" />
+                  <span>Gestão CRM</span>
+                </button>
+              )}
+            </div>
+
+            <div className="w-full h-[1px] bg-slate-100 dark:bg-slate-800/60" />
+
+            {/* Settings */}
+            <div className="space-y-3">
+              <p className="text-[9px] font-bold text-[#8181A5] uppercase tracking-widest">Ajustes Rápidos</p>
+              
+              {/* Theme button in drawer */}
+              <button
+                onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+                className="w-full text-left py-3 px-4 rounded-xl text-xs font-bold bg-slate-50 dark:bg-slate-800/40 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 uppercase tracking-wider cursor-pointer flex items-center gap-3"
+              >
+                {theme === 'dark' ? <Sun className="w-4 h-4 text-[#F4BE5E]" /> : <Moon className="w-4 h-4 text-[#5E81F4]" />}
+                <span>Tema: {theme === 'dark' ? 'Claro' : 'Escuro'}</span>
+              </button>
+
+              {/* Provider button in drawer */}
+              {(currentRole === 'admin' || currentRole === 'atendente') && (
+                <button
+                  onClick={() => setProvider(provider === 'gemini' ? 'ollama' : 'gemini')}
+                  className="w-full text-left py-3 px-4 rounded-xl text-xs font-bold bg-slate-50 dark:bg-slate-800/40 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 uppercase tracking-wider cursor-pointer flex items-center gap-3"
+                >
+                  {provider === 'gemini' ? <Cloud className="w-4 h-4 text-[#5E81F4]" /> : <Cpu className="w-4 h-4 text-[#F4BE5E]" />}
+                  <span>Provedor: {provider === 'gemini' ? 'Gemini Pro' : 'Ollama Local'}</span>
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Drawer Footer */}
+          <div className="p-5 border-t border-slate-100 dark:border-slate-800/60 flex justify-between items-center shrink-0">
+            <div className="flex items-center gap-2 min-w-0">
+              <div className="w-8 h-8 bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded-lg flex items-center justify-center font-bold text-xs shrink-0">
+                {(profile?.name || user?.displayName || 'U').slice(0, 1).toUpperCase()}
+              </div>
+              <div className="min-w-0">
+                <p className="text-xs font-bold text-slate-800 dark:text-slate-200 truncate">{profile?.name || user?.displayName || 'Cliente Segura'}</p>
+                <p className="text-[9px] uppercase tracking-wider font-mono text-slate-400 font-semibold mt-0.5">{currentRole}</p>
+              </div>
+            </div>
+            <button 
+              onClick={logout}
+              className="text-xs font-bold text-rose-500 hover:text-rose-600 uppercase tracking-wider cursor-pointer"
+            >
+              Sair
+            </button>
+          </div>
+        </div>
+      </div>
+    )}
+  </div>
+);
 }

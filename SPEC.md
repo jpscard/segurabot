@@ -47,16 +47,30 @@ Como separamos as responsabilidades através de Contratos (Interfaces), podemos 
 Para suportar as funcionalidades inteligentes do assistente, a arquitetura incorpora um pipeline de RAG (Retrieval-Augmented Generation) dinâmico e flexível.
 
 ### 4.1 Ingestão de Dados (Upload e Processamento)
-O sistema deve ser capaz de ingerir dados históricos e documentações para alimentar o banco vetorial / base de conhecimento no Firebase Firestore.
+O sistema é capaz de ingerir dados históricos e documentações para alimentar o banco vetorial / base de conhecimento no Firebase Firestore.
 *   **Dados Estruturados (CSV/JSON):** Importação de Datasets (ex: Kaggle) convertendo `category`, `question` e `answer` diretamente para a coleção `knowledge_base`.
-*   **Dados Não Estruturados (PDFs):** O upload de manuais e apólices em PDF utiliza as capacidades multimodais do LLM (ex: Gemini 3 Flash via `File API` ou `inlineData`) como um motor de "Intelligent Document Processing" (IDP). A IA lê o PDF, extrai FAQs e devolve um JSON estruturado pronto para ingestão, sem necessidade de bibliotecas pesadas de OCR no client-side.
+*   **Dados Não Estruturados (PDFs):** O upload de manuais e apólices em PDF utiliza as capacidades multimodais do LLM (ex: Gemini 2.5 Flash via `File API` ou `inlineData`) como um motor de "Intelligent Document Processing" (IDP). A IA lê o PDF, extrai FAQs e devolve um JSON estruturado pronto para ingestão.
+*   **Web Scraping RAG (URLs):** Os administradores podem inserir links públicos de termos de apólices ou processos. O sistema raspa o link, extrai FAQs semânticas via IA e as indexa automaticamente na base de conhecimento.
 
 ### 4.2 Arquitetura de RAG
 1.  **Recuperação (Retrieval):** O `IKnowledgeBaseRepository` (implementado pelo adaptador do Firebase) busca no Firestore o contexto relevante com base no input do usuário.
 2.  **Aumento (Augmentation):** O `ProcessUserMessageUseCase` injeta essas regras, manuais ou FAQs no *System Prompt* do `IAIAssistantService`.
 3.  **Geração (Generation):** O LLM gera a resposta combinando sua inteligência natural com as verdades (ground truth) extraídas dos dados da seguradora.
 
-### 4.3 Expansão Futura (CRM & Tickets)
-A arquitetura prevê interfaces para a ingestão ou consulta em tempo real (via adaptadores específicos na camada de infra/serviços) de:
-*   **Histórico de Atendimentos:** Extração de base de tickets de suporte anonimizados para calibração do modelo.
-*   **Integração CRM:** Criação de um `ICustomerRepository` que busca dados da apólice ativa do usuário logado e injeta esse contexto personalizado no motor de IA durante o atendimento.
+### 4.3 Integração CRM & Histórico de Suporte (Implementados)
+Todas as integrações ricas de personalização foram implementadas com sucesso:
+*   **Histórico de Atendimentos (Tickets de Suporte):** Persistência na coleção `/support_tickets`. O `supportAgentNode` no grafo de decisão multiagente consome os chamados ativos e anteriores para calibração de status.
+*   **Integração CRM:** O repositório `FirebaseCustomerRepository` busca o perfil de cadastro do cliente logado, fornecendo à IA dados sobre apólices detalhadas, sinistros, pontuação de risco e resumos inteligentes para que o chatbot personalize reativamente as tratativas.
+
+---
+
+## 5. Blindagem Digital & Monitoramento (Implementados)
+
+### 5.1 Barreiras de Segurança (Security Guardrails)
+*   **Prompt Injection:** Análise léxica ativa no caso de uso que intercepta tentativas de subversão de prompt antes de enviar os dados à API Gemini.
+*   **SSRF Protection:** Validador de IP/URL privada na raspagem de links da web que impede varreduras na intranet física do servidor.
+*   **Controle de Acesso Reativo (RBAC):** Escrita nas coleções de conhecimento (`knowledge_base` e `knowledge_sources`) restrita unicamente a papéis de `admin` e `atendente` através de checagem do perfil no Firestore.
+
+### 5.2 RAG Web Analytics & Funil de Conversão
+Monitoramento passivo anônimo (em conformidade com a LGPD) que coleta visitas, abertura do widget, mensagens enviadas e conversão final no CRM.
+*   **Painel Administrativo:** Exibe cards de KPIs (visitantes, cliques, bounce rate e leads), gráfico de funil reativo em CSS nativo e log de eventos filtráveis por data (Tudo, Hoje, 7 Dias, 30 Dias ou personalizado).

@@ -2,10 +2,10 @@ import { collection, getDocs, query } from 'firebase/firestore';
 import { db } from './firebase';
 import { KnowledgeBaseEntry } from '../domain';
 import { IKnowledgeBaseRepository } from '../domain/IKnowledgeBaseRepository';
-import { GeminiEmbeddingService } from './GeminiEmbeddingService';
+import { DynamicEmbeddingService } from './DynamicEmbeddingService';
 
 export class FirebaseKnowledgeBaseRepository implements IKnowledgeBaseRepository {
-  private embeddingService = new GeminiEmbeddingService();
+  private embeddingService = new DynamicEmbeddingService();
 
   async searchRelevantContext(userQuery: string): Promise<KnowledgeBaseEntry[]> {
     try {

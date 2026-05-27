@@ -84,6 +84,42 @@ describe('FirebaseCustomerRepository', () => {
     expect(profile).toBeNull();
   });
 
+  it('getCustomerProfileByEmail should return profile if it exists', async () => {
+    const mockDoc = {
+      id: 'doc123',
+      data: () => ({
+        userId: 'user123',
+        name: 'Cliente Teste',
+        email: 'cliente@teste.com',
+        activePolicies: ['Saúde Ouro'],
+        loyaltyTier: 'Gold'
+      })
+    };
+    
+    vi.mocked(getDocs).mockResolvedValue({
+      empty: false,
+      docs: [mockDoc]
+    } as any);
+
+    const profile = await repository.getCustomerProfileByEmail('cliente@teste.com');
+
+    expect(profile).not.toBeNull();
+    expect(profile?.name).toBe('Cliente Teste');
+    expect(profile?.email).toBe('cliente@teste.com');
+  });
+
+  it('getCustomerProfileByEmail should fallback to mock profile in demo mode for joao.silva@exemplo.com if Firestore is empty', async () => {
+    vi.mocked(getDocs).mockResolvedValue({
+      empty: true,
+      docs: []
+    } as any);
+
+    const profile = await repository.getCustomerProfileByEmail('joao.silva@exemplo.com');
+
+    expect(profile).not.toBeNull();
+    expect(profile?.name).toBe('João Silva');
+  });
+
   it('saveCustomerProfile should call setDoc', async () => {
     await repository.saveCustomerProfile('user123', {
       userId: 'user123',

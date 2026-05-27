@@ -5,9 +5,9 @@ import { GoogleGenAI } from '@google/genai';
 let ai: GoogleGenAI | null = null;
 let lastApiKey: string | null = null;
 
-function getAI() {
-  const customKey = typeof window !== 'undefined' ? localStorage.getItem('gemini_api_key') : null;
-  const apiKey = customKey || import.meta.env.VITE_GEMINI_API_KEY || "";
+function getAI(instanceKey?: string) {
+  const customKey = instanceKey || (typeof window !== 'undefined' ? localStorage.getItem('gemini_api_key') : null);
+  const apiKey = customKey || (typeof process !== 'undefined' && process.env ? process.env.GEMINI_API_KEY : '') || import.meta.env.VITE_GEMINI_API_KEY || "";
   
   if (!apiKey) {
     console.warn("GEMINI_API_KEY is not set. Using mock mode.");
@@ -22,9 +22,17 @@ function getAI() {
 }
 
 export class GeminiAssistantService implements IAIAssistantService {
+  private customApiKey?: string;
+  private customModelName?: string;
+
+  constructor(apiKey?: string, modelName?: string) {
+    this.customApiKey = apiKey;
+    this.customModelName = modelName;
+  }
+
   async generateResponse(history: Message[], newPrompt: string, onChunk?: (chunk: string) => void): Promise<string> {
     try {
-      const aiInstance = getAI();
+      const aiInstance = getAI(this.customApiKey);
       if (!aiInstance) {
         // Mock streaming
         const mockResponse = `**Modo de Demonstração (Gemini)**\nA chave da API Gemini não foi configurada.`;
@@ -47,8 +55,10 @@ export class GeminiAssistantService implements IAIAssistantService {
         parts: [{ text: newPrompt }]
       });
 
+      const activeModel = this.customModelName || (typeof window !== 'undefined' ? localStorage.getItem('gemini_model') || 'gemini-2.5-flash' : 'gemini-2.5-flash');
+
       const responseStream = await aiInstance.models.generateContentStream({
-        model: "gemini-3-flash",
+        model: activeModel,
         contents: contents,
         config: {
           temperature: 0.7,

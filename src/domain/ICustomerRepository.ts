@@ -2,6 +2,7 @@ import { CustomerProfile, SupportTicket } from './index';
 
 export interface ICustomerRepository {
   getCustomerProfile(userId: string): Promise<CustomerProfile | null>;
+  getCustomerProfileByEmail(email: string): Promise<CustomerProfile | null>;
   getSupportTickets(userId: string): Promise<SupportTicket[]>;
   saveCustomerProfile(userId: string, profile: Omit<CustomerProfile, 'id'>): Promise<void>;
   createSupportTicket(ticket: Omit<SupportTicket, 'id'>): Promise<void>;

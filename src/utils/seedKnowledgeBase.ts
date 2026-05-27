@@ -1,14 +1,27 @@
-import { collection, setDoc, doc } from 'firebase/firestore';
+import { collection, setDoc, doc, addDoc, updateDoc } from 'firebase/firestore';
 import { db } from '../infrastructure/firebase';
 import { extractFAQsFromPDF } from '../infrastructure/gemini';
-import { GeminiEmbeddingService } from '../infrastructure/GeminiEmbeddingService';
+import { DynamicEmbeddingService } from '../infrastructure/DynamicEmbeddingService';
 
 export async function uploadRealDataToKnowledgeBase(file: File): Promise<number> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
 
     reader.onload = async (e) => {
+      let sourceId: string | null = null;
       try {
+        // 1. Registrar a fonte de conhecimento no Firestore
+        const sourceRef = collection(db, 'knowledge_sources');
+        const fileType = file.name.endsWith('.pdf') ? 'pdf' : file.name.endsWith('.csv') ? 'csv' : 'json';
+        const sourceDoc = await addDoc(sourceRef, {
+          name: file.name,
+          type: fileType,
+          status: 'processing',
+          chunkCount: 0,
+          createdAt: new Date().toISOString()
+        });
+        sourceId = sourceDoc.id;
+
         let dataToUpload: any[] = [];
         if (file.name.endsWith('.json')) {
           const text = e.target?.result as string;
@@ -56,7 +69,7 @@ export async function uploadRealDataToKnowledgeBase(file: File): Promise<number>
 
         const kbRef = collection(db, 'knowledge_base');
         let count = 0;
-        const embeddingService = new GeminiEmbeddingService();
+        const embeddingService = new DynamicEmbeddingService();
 
         for (const item of dataToUpload) {
           if (!item.question || !item.answer) continue;
@@ -75,14 +88,37 @@ export async function uploadRealDataToKnowledgeBase(file: File): Promise<number>
             question: item.question,
             answer: item.answer,
             source: item.source || file.name,
+            sourceId: sourceId, // Vínculo com a fonte de conhecimento
             embedding: embedding
           });
           count++;
         }
 
+        // 2. Atualizar o status da fonte de conhecimento para 'completed' com o total de chunks
+        if (sourceId) {
+          const sourceDocRef = doc(db, 'knowledge_sources', sourceId);
+          await updateDoc(sourceDocRef, {
+            status: 'completed',
+            chunkCount: count
+          });
+        }
+
         resolve(count);
       } catch (error) {
         console.error("Erro processando arquivo:", error);
+        
+        // 3. Atualizar o status da fonte para 'error' em caso de falha no pipeline
+        if (sourceId) {
+          try {
+            const sourceDocRef = doc(db, 'knowledge_sources', sourceId);
+            await updateDoc(sourceDocRef, {
+              status: 'error'
+            });
+          } catch (e) {
+            console.error("Erro ao atualizar status de erro da fonte:", e);
+          }
+        }
+        
         reject(error);
       }
     };

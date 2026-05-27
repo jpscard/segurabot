@@ -16,8 +16,10 @@ export class MemoryChatRepository implements IChatRepository {
     }
   }
 
-  async updateSession(userId: string, session: ChatSession): Promise<void> {
-    this.sessions.set(session.id, session);
+  async updateSession(userId: string, session: ChatSession | (Partial<ChatSession> & { id: string })): Promise<void> {
+    const existing = this.sessions.get(session.id) || {} as ChatSession;
+    const merged = { ...existing, ...session } as ChatSession;
+    this.sessions.set(session.id, merged);
   }
   
   async createSession(userId: string, title: string, lastMessage: string): Promise<ChatSession> {
@@ -44,6 +46,11 @@ export class MemoryChatRepository implements IChatRepository {
   listenToSessions(userId: string, callback: (sessions: ChatSession[]) => void, onError: (error: Error) => void): () => void {
     const userSessions = Array.from(this.sessions.values()).filter(s => s.userId === userId);
     callback(userSessions);
+    return () => {};
+  }
+
+  listenToAllSessions(callback: (sessions: ChatSession[]) => void, onError: (error: Error) => void): () => void {
+    callback(Array.from(this.sessions.values()));
     return () => {};
   }
 

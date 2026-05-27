@@ -24,9 +24,13 @@ export class ProcessUserMessageUseCase {
         lastMessage: '',
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
-        messages: []
+        messages: [],
+        status: 'ia'
       };
       await this.chatRepository.updateSession(userId, session);
+    } else if (session.status === 'concluido') {
+      session.status = 'ia';
+      await this.chatRepository.updateSession(userId, { id: sessionId, status: 'ia' });
     }
 
     // 2. Create and save user message
@@ -42,6 +46,35 @@ export class ProcessUserMessageUseCase {
     const history = session.messages || [];
     if (!history.some(m => m.id === userMessage.id)) {
       history.push(userMessage);
+    }
+
+    // 3.1. Guardrail Contra Prompt Injection
+    const injectionPatterns = [
+      "ignorar as instruções", "ignore as instruções", "ignore as instrucoes", "ignorar as instrucoes",
+      "ignore previous instructions", "forget previous instructions",
+      "desconsidere as instruções", "desconsidere as instrucoes", "esqueca as instruções", "esqueca as instrucoes",
+      "you are now an admin", "você agora é um administrador", "voce agora e um administrador",
+      "instruções de sistema", "instrucoes de sistema", "system instructions", "system prompt"
+    ];
+    
+    const lowercaseInput = userText.toLowerCase();
+    const hasInjection = injectionPatterns.some(pattern => lowercaseInput.includes(pattern));
+    
+    if (hasInjection) {
+      const aiMessage: Message = {
+        id: `msg-blocked-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
+        role: Role.MODEL,
+        content: "⚠️ Ação bloqueada pelas políticas de segurança do SeguraBot (Tentativa de Prompt Injection detectada). Seus dados e apólices permanecem totalmente seguros e isolados.",
+        timestamp: new Date().toISOString()
+      };
+      await this.chatRepository.saveMessage(userId, sessionId, aiMessage);
+      
+      session.lastMessage = aiMessage.content;
+      session.updatedAt = new Date().toISOString();
+      await this.chatRepository.updateSession(userId, session);
+      
+      onChunk?.(aiMessage.content);
+      return aiMessage;
     }
 
     // Bypass se estiver no modo de atendimento humano

@@ -2,9 +2,9 @@
 ### **Solução Conversacional Inteligente Multiagente (RAG) com Integração CRM Omnichannel para o Setor de Seguros**
 
 > **Autores do Projeto (Membros da Equipe):** 
-> * Felipe Rafael dos Santos Barbosa
+> * Leonardo Alves Pereira
 > * João Paulo da Silva Cardoso
-> * Victor Amazonas Viegas Ferreira
+> 
 >
 > **GitHub Repository:** [jpscard/uci_ai (Main Branch)](https://github.com/jpscard/uci_ai/tree/main)
 > **URL de Produção Live:** [segurabot.web.app](https://segurabot.web.app)

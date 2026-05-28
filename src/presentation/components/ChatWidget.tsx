@@ -45,6 +45,34 @@ export function ChatWidget() {
   const [sessionStatus, setSessionStatus] = useState<'ia' | 'aguardando_humano' | 'humano' | 'concluido'>('ia');
   const [operatorName, setOperatorName] = useState('');
   const [operatorTyping, setOperatorTyping] = useState(false);
+  const [visitorPlan, setVisitorPlan] = useState<string | null>(() => localStorage.getItem('segurabot_visitor_plan'));
+
+  // Load visitor details from localStorage if they subscribed to a plan
+  useEffect(() => {
+    const handlePlanSubscribed = () => {
+      const storedId = localStorage.getItem('segurabot_visitor_id');
+      const storedName = localStorage.getItem('segurabot_visitor_name');
+      const storedEmail = localStorage.getItem('segurabot_visitor_email');
+      const storedPlan = localStorage.getItem('segurabot_visitor_plan');
+      
+      if (storedId && storedName && storedEmail) {
+        setVisitorId(storedId);
+        setLeadName(storedName);
+        setLeadEmail(storedEmail);
+        setVisitorPlan(storedPlan);
+        setStep('chat');
+        initializeChat(storedId, storedName);
+        setIsOpen(true); // Abre o widget automaticamente após assinar
+      }
+    };
+
+    // Executa no mount
+    handlePlanSubscribed();
+
+    // Escuta evento dinâmico
+    window.addEventListener('segurabot_plan_subscribed', handlePlanSubscribed);
+    return () => window.removeEventListener('segurabot_plan_subscribed', handlePlanSubscribed);
+  }, []);
 
   // Initialize Speech Recognition on mount
   useEffect(() => {
@@ -390,13 +418,25 @@ export function ChatWidget() {
         <div className="mb-4 w-80 md:w-96 h-[450px] bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-[#ECECF2] dark:border-slate-800 flex flex-col overflow-hidden transition-all duration-300">
           {/* Header */}
           <div className="px-4 py-3.5 bg-gradient-to-r from-[#5E81F4] to-[#9698D6] dark:from-slate-850 dark:to-slate-800 text-white flex justify-between items-center transition-colors duration-300 shadow-sm">
-            <div>
-              <h3 className="font-bold text-xs uppercase tracking-wider">
-                {sessionStatus === 'humano' ? 'Suporte Humano' : 'Atendimento SeguraBot'}
-              </h3>
-              <p className="text-[10px] text-blue-50 dark:text-slate-400 font-mono mt-0.5">
-                {sessionStatus === 'humano' ? `Operador: ${operatorName}` : sessionStatus === 'aguardando_humano' ? 'Aguardando Operador' : 'Assistente Virtual'}
-              </p>
+            <div className="flex items-center gap-2.5">
+              <div>
+                <h3 className="font-bold text-xs uppercase tracking-wider">
+                  {sessionStatus === 'humano' ? 'Suporte Humano' : 'Atendimento SeguraBot'}
+                </h3>
+                <p className="text-[10px] text-blue-50 dark:text-slate-400 font-mono mt-0.5">
+                  {sessionStatus === 'humano' ? `Operador: ${operatorName}` : sessionStatus === 'aguardando_humano' ? 'Aguardando Operador' : 'Assistente Virtual'}
+                </p>
+              </div>
+              {visitorPlan && (
+                <span className={cn(
+                  "text-[8px] px-1.5 py-0.5 rounded font-bold uppercase tracking-wider shrink-0",
+                  visitorPlan === 'Premium' ? "bg-white text-[#5E81F4] dark:bg-blue-950/60 dark:text-blue-400 border border-blue-500/10" :
+                  visitorPlan === 'Gold' ? "bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-400 border border-amber-500/10" :
+                  "bg-slate-100 text-slate-700 dark:bg-slate-850 dark:text-slate-400 border border-slate-700/20"
+                )}>
+                  {visitorPlan === 'Premium' ? 'Premium' : visitorPlan === 'Gold' ? 'Gold' : 'Bronze'}
+                </span>
+              )}
             </div>
             <div className="flex items-center gap-4">
               <button className="text-white hover:text-blue-100 dark:hover:text-slate-300 transition-colors cursor-pointer" title="Ligar">

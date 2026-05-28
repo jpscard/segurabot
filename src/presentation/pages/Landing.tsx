@@ -1,10 +1,13 @@
 import { useState, useEffect } from 'react';
-import { loginWithGoogle, loginDevAdmin, loginWithEmail, sendPasswordRecovery } from '../../infrastructure/firebase';
+import { loginWithGoogle, loginDevAdmin, loginWithEmail, sendPasswordRecovery, loginAnonymously } from '../../infrastructure/firebase';
+import { FirebaseCustomerRepository } from '../../infrastructure/FirebaseCustomerRepository';
 import { ChatWidget } from '../components/ChatWidget';
 import { cn } from '../../utils/utils';
 import { useTheme } from '../context/ThemeContext';
-import { Shield, Zap, Users, BarChart3, ArrowRight, ChevronRight, Lock, Globe, Mail, Chrome, Key } from 'lucide-react';
+import { Shield, Zap, Users, BarChart3, ArrowRight, ChevronRight, Lock, Globe, Mail, Chrome, Key, CreditCard } from 'lucide-react';
 import { trackAnalyticsEvent } from '../../utils/analytics';
+
+const customerRepo = new FirebaseCustomerRepository();
 
 export function Landing() {
   const [isLoggingIn, setIsLoggingIn] = useState(false);
@@ -15,11 +18,109 @@ export function Landing() {
   const [loginSuccessMessage, setLoginSuccessMessage] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   
+  // Plan/Subscription States
+  const [showCheckoutModal, setShowCheckoutModal] = useState(false);
+  const [selectedPlan, setSelectedPlan] = useState<'Bronze' | 'Gold' | 'Premium'>('Gold');
+  const [checkoutName, setCheckoutName] = useState('');
+  const [checkoutEmail, setCheckoutEmail] = useState('');
+  const [checkoutPhone, setCheckoutPhone] = useState('');
+  const [checkoutCardNumber, setCheckoutCardNumber] = useState('');
+  const [checkoutCardExpiry, setCheckoutCardExpiry] = useState('');
+  const [checkoutCardCvv, setCheckoutCardCvv] = useState('');
+  const [isProcessingPayment, setIsProcessingPayment] = useState(false);
+  const [paymentStep, setPaymentStep] = useState<'details' | 'processing' | 'success'>('details');
+  const [paymentMethod, setPaymentMethod] = useState<'card' | 'pix'>('card');
+  const [checkoutError, setCheckoutError] = useState('');
+  
   const { theme, setTheme } = useTheme();
 
   useEffect(() => {
     trackAnalyticsEvent('page_view');
   }, []);
+
+  const handleCheckoutSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!checkoutName.trim() || !checkoutEmail.trim()) {
+      setCheckoutError('Por favor, preencha o Nome e o E-mail corporativo.');
+      return;
+    }
+    
+    setIsProcessingPayment(true);
+    setCheckoutError('');
+    setPaymentStep('processing');
+    
+    try {
+      // 1. Simular delay do Gateway de pagamento (Pix/Credit Card)
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      
+      // 2. Autenticação anônima real no Firebase
+      const anonymousUser = await loginAnonymously();
+      const uid = anonymousUser.uid;
+      
+      // 3. Mapear o plano para o formato do Firestore
+      const tierMap = {
+        Bronze: 'Bronze',
+        Gold: 'Ouro',
+        Premium: 'Platina'
+      };
+      
+      const policyMap = {
+        Bronze: {
+          name: 'Seguro Saúde Bronze Básico',
+          id: '#SAUDE-BRONZE-102',
+          desc: 'Cobertura regional ambulatorial'
+        },
+        Gold: {
+          name: 'Seguro Auto Gold Completo',
+          id: '#AUTO-GOLD-342',
+          desc: 'Cobertura colisão e guincho 200km'
+        },
+        Premium: {
+          name: 'Seguro Saúde Executivo Premium Plus',
+          id: '#SAUDE-PREMIUM-778',
+          desc: 'Cobertura nacional, internação particular e reembolso ilimitado'
+        }
+      };
+      
+      const selectedPolicy = policyMap[selectedPlan];
+      
+      // 4. Salvar perfil real do segurado no Firestore
+      await customerRepo.saveCustomerProfile(uid, {
+        userId: uid,
+        name: checkoutName.trim(),
+        email: checkoutEmail.trim(),
+        phone: checkoutPhone.trim(),
+        activePolicies: [`${selectedPolicy.name} (Apólice ${selectedPolicy.id})`],
+        policies: [selectedPlan === 'Gold' ? 'Auto' : 'Saúde'],
+        claims: [],
+        documents: [],
+        loyaltyTier: tierMap[selectedPlan],
+        lifeStage: 'Família',
+        riskScore: selectedPlan === 'Premium' ? 10 : selectedPlan === 'Gold' ? 25 : 45,
+        aiSummary: `Segurado ${selectedPlan} cadastrado com sucesso via portal de auto-adesão de planos.`,
+        role: 'cliente'
+      });
+      
+      // 5. Salvar localmente no LocalStorage para o ChatWidget ler instantaneamente
+      localStorage.setItem('segurabot_visitor_id', uid);
+      localStorage.setItem('segurabot_visitor_name', checkoutName.trim());
+      localStorage.setItem('segurabot_visitor_email', checkoutEmail.trim());
+      localStorage.setItem('segurabot_visitor_plan', selectedPlan);
+      
+      // 6. Disparar evento para o ChatWidget
+      window.dispatchEvent(new CustomEvent('segurabot_plan_subscribed', { 
+        detail: { uid, name: checkoutName.trim(), plan: selectedPlan } 
+      }));
+      
+      setPaymentStep('success');
+    } catch (err: any) {
+      console.error(err);
+      setCheckoutError('Falha ao processar pagamento e assinatura. Tente novamente.');
+      setPaymentStep('details');
+    } finally {
+      setIsProcessingPayment(false);
+    }
+  };
 
   const handleLogin = () => {
     setShowLoginModal(true);
@@ -361,6 +462,94 @@ export function Landing() {
               ))}
             </div>
           </div>
+        </div>
+      </section>
+
+      {/* Pricing / Planos de Assinatura Section */}
+      <section id="planos" className="relative z-10 max-w-6xl mx-auto px-6 pb-24 scroll-mt-20">
+        <div className="text-center mb-12">
+          <p className="text-xs font-bold text-[#5E81F4] uppercase tracking-widest mb-3">Assinaturas</p>
+          <h2 className="text-3xl font-black text-slate-900 dark:text-white tracking-tight">Escolha seu plano de proteção</h2>
+          <p className="text-sm text-[#8181A5] max-w-xl mx-auto mt-2 leading-relaxed font-normal">
+            Adquira uma apólice imediata e ative o suporte prioritário por inteligência artificial em segundos.
+          </p>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 max-w-5xl mx-auto">
+          {[
+            {
+              id: 'Bronze',
+              title: 'Plano Bronze',
+              price: 'R$ 49',
+              desc: 'Proteção básica ideal para consultas simples e dúvidas frequentes.',
+              features: ['Acesso ao SeguraBot RAG', 'Cobertura de Saúde Regional', 'Tickets de Suporte Comuns', 'Carência Padrão']
+            },
+            {
+              id: 'Gold',
+              title: 'Plano Gold',
+              price: 'R$ 99',
+              desc: 'Nosso plano mais popular. Proteção veicular e suporte premium.',
+              features: ['IA Avançada e RAG', 'Seguro Auto Completo', 'Guincho e Assistência 24h', 'Loyalty Tier Ouro', 'Handoff para Humano'],
+              popular: true
+            },
+            {
+              id: 'Premium',
+              title: 'Plano Premium',
+              price: 'R$ 199',
+              desc: 'Máxima prioridade em atendimento, reembolsos e assistência nacional.',
+              features: ['RAG com Manuais PDF Ilimitados', 'Seguro Saúde Executivo Premium', 'Suporte SLA de Alta Prioridade', 'Loyalty Tier Platina', 'Upgrades Automáticos']
+            }
+          ].map(plan => (
+            <div 
+              key={plan.id} 
+              className={cn(
+                "bg-white dark:bg-slate-900 border rounded-xl p-8 card-hover flex flex-col justify-between text-left relative",
+                plan.popular 
+                  ? "border-[#5E81F4] shadow-md shadow-[#5E81F4]/5 scale-102 z-10 animate-pulse-border" 
+                  : "border-[#ECECF2] dark:border-slate-800"
+              )}
+            >
+              {plan.popular && (
+                <span className="absolute top-0 right-6 -translate-y-1/2 px-3 py-1 bg-[#5E81F4] text-white text-[9px] font-black uppercase tracking-widest rounded-full">
+                  Mais Popular
+                </span>
+              )}
+              <div className="space-y-4">
+                <p className="text-[10px] font-black text-[#8181A5] uppercase tracking-widest">{plan.title}</p>
+                <div className="flex items-baseline gap-1">
+                  <span className="text-3xl font-black text-slate-900 dark:text-white tracking-tight">{plan.price}</span>
+                  <span className="text-xs font-bold text-[#8181A5]">/mês</span>
+                </div>
+                <p className="text-xs text-[#8181A5] leading-relaxed font-normal">{plan.desc}</p>
+                
+                <div className="border-t border-[#ECECF2] dark:border-slate-800 my-4 pt-4 space-y-2.5">
+                  {plan.features.map(feat => (
+                    <div key={feat} className="flex items-center gap-2 text-xs text-slate-700 dark:text-slate-300 font-semibold">
+                      <div className="w-1.5 h-1.5 rounded-full bg-[#5E81F4]"></div>
+                      <span>{feat}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <button
+                onClick={() => {
+                  setSelectedPlan(plan.id as any);
+                  setPaymentStep('details');
+                  setCheckoutError('');
+                  setShowCheckoutModal(true);
+                }}
+                className={cn(
+                  "w-full py-3 rounded-lg text-xs font-bold uppercase tracking-widest cursor-pointer transition-all mt-6 text-center",
+                  plan.popular
+                    ? "bg-[#5E81F4] hover:bg-[#5E81F4]/90 text-white shadow-sm shadow-[#5E81F4]/20"
+                    : "bg-[#F6F6F6] dark:bg-slate-800 text-slate-800 dark:text-white hover:bg-slate-100 dark:hover:bg-slate-700 border border-[#ECECF2] dark:border-slate-700"
+                )}
+              >
+                Contratar Agora
+              </button>
+            </div>
+          ))}
         </div>
       </section>
 
@@ -727,6 +916,216 @@ export function Landing() {
                     Atendente
                   </button>
                 </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Checkout Modal Simulado */}
+      {showCheckoutModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 animate-fade-in">
+          <div 
+            className="absolute inset-0 bg-slate-950/70 backdrop-blur-md transition-opacity"
+            onClick={() => { if (!isProcessingPayment) setShowCheckoutModal(false); }}
+          />
+
+          <div className="relative bg-white dark:bg-slate-900 border border-[#ECECF2] dark:border-slate-800 rounded-2xl w-full max-w-lg p-8 shadow-2xl z-10 text-left animate-scale-in">
+            <div className="flex justify-between items-center mb-6">
+              <h3 className="text-xl font-black text-slate-900 dark:text-white tracking-tight">
+                Assinar {selectedPlan}
+              </h3>
+              <button 
+                disabled={isProcessingPayment}
+                onClick={() => setShowCheckoutModal(false)}
+                className="text-xs font-bold text-[#8181A5] hover:text-slate-900 dark:hover:text-white uppercase tracking-wider transition-colors disabled:opacity-50 cursor-pointer"
+              >
+                Fechar
+              </button>
+            </div>
+
+            {checkoutError && (
+              <div className="mb-4 p-3 bg-red-500/10 border border-red-500/20 text-red-500 text-xs font-bold rounded-lg text-center">
+                {checkoutError}
+              </div>
+            )}
+
+            {paymentStep === 'details' && (
+              <form onSubmit={handleCheckoutSubmit} className="space-y-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-[10px] font-bold text-[#8181A5] uppercase tracking-wider mb-1.5">
+                      Nome Completo
+                    </label>
+                    <input 
+                      type="text"
+                      required
+                      value={checkoutName}
+                      onChange={(e) => setCheckoutName(e.target.value)}
+                      placeholder="João Silva"
+                      className="w-full px-4 py-3 bg-[#F6F6F6] dark:bg-slate-955 border border-[#ECECF2] dark:border-slate-800 rounded-lg text-sm text-slate-900 dark:text-white focus:outline-none focus:border-[#5E81F4] transition-colors font-semibold"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-bold text-[#8181A5] uppercase tracking-wider mb-1.5">
+                      E-mail Corporativo
+                    </label>
+                    <input 
+                      type="email"
+                      required
+                      value={checkoutEmail}
+                      onChange={(e) => setCheckoutEmail(e.target.value)}
+                      placeholder="joao@empresa.com.br"
+                      className="w-full px-4 py-3 bg-[#F6F6F6] dark:bg-slate-955 border border-[#ECECF2] dark:border-slate-800 rounded-lg text-sm text-slate-900 dark:text-white focus:outline-none focus:border-[#5E81F4] transition-colors font-semibold"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-[10px] font-bold text-[#8181A5] uppercase tracking-wider mb-1.5">
+                    Telefone de Contato
+                  </label>
+                  <input 
+                    type="text"
+                    value={checkoutPhone}
+                    onChange={(e) => setCheckoutPhone(e.target.value)}
+                    placeholder="(11) 99999-9999"
+                    className="w-full px-4 py-3 bg-[#F6F6F6] dark:bg-slate-955 border border-[#ECECF2] dark:border-slate-800 rounded-lg text-sm text-slate-900 dark:text-white focus:outline-none focus:border-[#5E81F4] transition-colors font-semibold"
+                  />
+                </div>
+
+                {/* Tipo de Pagamento */}
+                <div>
+                  <label className="block text-[10px] font-bold text-[#8181A5] uppercase tracking-wider mb-2">
+                    Método de Pagamento (Simulação Segura)
+                  </label>
+                  <div className="grid grid-cols-2 gap-3">
+                    <button
+                      type="button"
+                      onClick={() => setPaymentMethod('card')}
+                      className={cn(
+                        "py-3 rounded-lg text-xs font-bold uppercase tracking-wider border cursor-pointer transition-all text-center",
+                        paymentMethod === 'card' 
+                          ? "bg-slate-950 dark:bg-slate-850 border-[#5E81F4] text-white" 
+                          : "bg-[#F6F6F6] dark:bg-slate-955 border-[#ECECF2] dark:border-slate-800 text-[#8181A5]"
+                      )}
+                    >
+                      Cartão de Crédito
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setPaymentMethod('pix')}
+                      className={cn(
+                        "py-3 rounded-lg text-xs font-bold uppercase tracking-wider border cursor-pointer transition-all text-center",
+                        paymentMethod === 'pix' 
+                          ? "bg-slate-950 dark:bg-slate-850 border-[#5E81F4] text-white" 
+                          : "bg-[#F6F6F6] dark:bg-slate-955 border-[#ECECF2] dark:border-slate-800 text-[#8181A5]"
+                      )}
+                    >
+                      Pix Copia e Cola
+                    </button>
+                  </div>
+                </div>
+
+                {paymentMethod === 'card' ? (
+                  <div className="space-y-3 pt-2">
+                    <div>
+                      <label className="block text-[10px] font-bold text-[#8181A5] uppercase tracking-wider mb-1.5">
+                        Número do Cartão
+                      </label>
+                      <input 
+                        type="text"
+                        required
+                        value={checkoutCardNumber}
+                        onChange={(e) => setCheckoutCardNumber(e.target.value)}
+                        placeholder="4242 4242 4242 4242"
+                        className="w-full px-4 py-3 bg-[#F6F6F6] dark:bg-slate-955 border border-[#ECECF2] dark:border-slate-800 rounded-lg text-sm text-slate-900 dark:text-white focus:outline-none focus:border-[#5E81F4] transition-colors font-semibold"
+                      />
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-[10px] font-bold text-[#8181A5] uppercase tracking-wider mb-1.5">
+                          Validade
+                        </label>
+                        <input 
+                          type="text"
+                          required
+                          value={checkoutCardExpiry}
+                          onChange={(e) => setCheckoutCardExpiry(e.target.value)}
+                          placeholder="12/30"
+                          className="w-full px-4 py-3 bg-[#F6F6F6] dark:bg-slate-955 border border-[#ECECF2] dark:border-slate-800 rounded-lg text-sm text-slate-900 dark:text-white focus:outline-none focus:border-[#5E81F4] transition-colors font-semibold"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-bold text-[#8181A5] uppercase tracking-wider mb-1.5">
+                          CVV
+                        </label>
+                        <input 
+                          type="text"
+                          required
+                          value={checkoutCardCvv}
+                          onChange={(e) => setCheckoutCardCvv(e.target.value)}
+                          placeholder="123"
+                          className="w-full px-4 py-3 bg-[#F6F6F6] dark:bg-slate-955 border border-[#ECECF2] dark:border-slate-800 rounded-lg text-sm text-slate-900 dark:text-white focus:outline-none focus:border-[#5E81F4] transition-colors font-semibold"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="pt-2 flex flex-col items-center justify-center space-y-3 bg-[#F6F6F6] dark:bg-slate-955 border border-[#ECECF2] dark:border-slate-800 p-4 rounded-xl">
+                    <div className="font-mono text-center text-xs p-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-md break-all font-semibold max-w-xs text-slate-500 select-all">
+                      00020126360014BR.GOV.BCB.PIX0114segurabot@pix25
+                    </div>
+                    <span className="text-[9px] font-bold text-[#8181A5] uppercase tracking-widest text-center">
+                      Código Pix Copia e Cola Gerado Automaticamente
+                    </span>
+                  </div>
+                )}
+
+                <button 
+                  type="submit"
+                  className="w-full py-3 bg-[#5E81F4] hover:bg-[#5E81F4]/90 text-white text-xs font-bold rounded-lg transition-all shadow-sm shadow-[#5E81F4]/20 flex items-center justify-center uppercase tracking-widest cursor-pointer mt-4"
+                >
+                  Finalizar Assinatura ({selectedPlan})
+                </button>
+              </form>
+            )}
+
+            {paymentStep === 'processing' && (
+              <div className="py-12 flex flex-col items-center justify-center space-y-4">
+                <div className="w-10 h-10 border-4 border-[#5E81F4] border-t-transparent rounded-full animate-spin"></div>
+                <div className="text-center space-y-1">
+                  <p className="text-sm font-black text-slate-900 dark:text-white uppercase tracking-wider">Processando Assinatura</p>
+                  <p className="text-xs text-[#8181A5]">Autenticando e gravando apólice no Firestore...</p>
+                </div>
+              </div>
+            )}
+
+            {paymentStep === 'success' && (
+              <div className="py-8 flex flex-col items-center justify-center space-y-4 text-center">
+                <div className="w-14 h-14 bg-emerald-500/10 border border-emerald-500/20 rounded-full flex items-center justify-center text-emerald-500">
+                  <svg xmlns="http://www.w3.org/2000/svg" className="w-7 h-7" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="3"><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>
+                </div>
+                <div className="space-y-2">
+                  <h4 className="text-lg font-black text-slate-900 dark:text-white tracking-tight uppercase">Assinatura Ativada!</h4>
+                  <p className="text-xs text-[#8181A5] max-w-xs leading-relaxed font-normal">
+                    Parabéns, <strong className="text-slate-900 dark:text-white font-bold">{checkoutName}</strong>! Sua assinatura do <strong className="text-[#5E81F4] font-bold">{selectedPlan}</strong> foi registrada em tempo real no Firestore.
+                  </p>
+                  <p className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest pt-2">
+                    A IA já foi inicializada e está ciente de suas apólices.
+                  </p>
+                </div>
+                <button
+                  onClick={() => {
+                    setShowCheckoutModal(false);
+                    // Dispara abertura do chat
+                    const event = new CustomEvent('openChatWidget');
+                    window.dispatchEvent(event);
+                  }}
+                  className="px-6 py-3 bg-[#5E81F4] hover:bg-[#5E81F4]/90 text-white text-xs font-bold rounded-lg uppercase tracking-widest cursor-pointer shadow-sm transition-all mt-4 w-full text-center"
+                >
+                  Falar com o SeguraBot
+                </button>
               </div>
             )}
           </div>

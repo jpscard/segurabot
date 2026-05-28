@@ -1355,8 +1355,9 @@ export function CrmAdmin({ activeTab: propActiveTab, setActiveTab: propSetActive
                   {profile?.loyaltyTier && (
                     <span className={`text-[8px] font-bold px-2 py-0.5 rounded uppercase tracking-wider ${
                       profile.loyaltyTier === 'Silver' ? 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300' :
-                      profile.loyaltyTier === 'Gold' ? 'bg-amber-100/70 text-amber-700 dark:bg-amber-950/40 dark:text-amber-400' :
-                      profile.loyaltyTier === 'Black' ? 'bg-slate-950 text-white dark:bg-slate-800 dark:text-slate-200' :
+                      profile.loyaltyTier === 'Gold' || profile.loyaltyTier === 'Ouro' ? 'bg-amber-100/70 text-amber-700 dark:bg-amber-950/40 dark:text-amber-400 border border-amber-500/20' :
+                      profile.loyaltyTier === 'Black' || profile.loyaltyTier === 'Platina' ? 'bg-blue-100 text-[#5E81F4] dark:bg-blue-950/40 dark:text-blue-400 border border-blue-500/20 shadow-sm' :
+                      profile.loyaltyTier === 'Bronze' ? 'bg-orange-100 text-orange-700 dark:bg-orange-950/40 dark:text-orange-400 border border-orange-500/10' :
                       'bg-blue-100 text-[#5E81F4] dark:bg-blue-950/40 dark:text-[#5E81F4]'
                     }`}>
                       {profile.loyaltyTier}

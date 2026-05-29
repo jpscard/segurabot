@@ -4,7 +4,7 @@ O **SeguraBot** é uma plataforma de assistente virtual baseada em Inteligência
 
 ## Equipe e Informações do Projeto
 * **Membros da Equipe:** João Paulo da Silva Cardoso e Leonardo Alves Pereira.
-* **Repositório Oficial:** [GitHub - uci_ai](https://github.com/jpscard/segurabot)
+* **Repositório Oficial:** [GitHub - Segurabot](https://github.com/jpscard/segurabot)
 * **Link Oficial:** [Segurabot](https://segurabot.web.app/)
 
 ## Objetivos do Produto

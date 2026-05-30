@@ -55,7 +55,7 @@ export class GeminiAssistantService implements IAIAssistantService {
         parts: [{ text: newPrompt }]
       });
 
-      const activeModel = this.customModelName || (typeof window !== 'undefined' ? localStorage.getItem('gemini_model') || 'gemini-2.5-flash' : 'gemini-2.5-flash');
+      const activeModel = this.customModelName || (typeof window !== 'undefined' ? localStorage.getItem('gemini_model') || 'gemini-flash-latest' : 'gemini-flash-latest');
 
       const responseStream = await aiInstance.models.generateContentStream({
         model: activeModel,

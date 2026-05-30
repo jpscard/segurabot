@@ -3,6 +3,7 @@ import { db } from '../../infrastructure/firebase';
 import { doc, onSnapshot, setDoc } from 'firebase/firestore';
 
 export type AIProviderType = 'gemini' | 'ollama';
+export type TTSProviderType = 'native' | 'elevenlabs';
 
 interface SettingsContextType {
   provider: AIProviderType;
@@ -15,6 +16,18 @@ interface SettingsContextType {
   setGeminiModel: (model: string) => void;
   geminiApiKey: string;
   setGeminiApiKey: (key: string) => void;
+  
+  // TTS Settings
+  ttsProvider: TTSProviderType;
+  setTtsProvider: (provider: TTSProviderType) => void;
+  elevenLabsApiKey: string;
+  setElevenLabsApiKey: (key: string) => void;
+  elevenLabsVoiceId: string;
+  setElevenLabsVoiceId: (id: string) => void;
+  ttsVoiceKeyword: string;
+  setTtsVoiceKeyword: (keyword: string) => void;
+  ttsRate: number;
+  setTtsRate: (rate: number) => void;
 }
 
 const SettingsContext = createContext<SettingsContextType | undefined>(undefined);
@@ -36,6 +49,23 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     return typeof window !== 'undefined' ? localStorage.getItem('gemini_api_key') || '' : '';
   });
 
+  // TTS states
+  const [ttsProvider, setTtsProviderState] = useState<TTSProviderType>(() => {
+    return typeof window !== 'undefined' ? (localStorage.getItem('tts_provider') as TTSProviderType) || 'native' : 'native';
+  });
+  const [elevenLabsApiKey, setElevenLabsApiKeyState] = useState<string>(() => {
+    return typeof window !== 'undefined' ? localStorage.getItem('elevenlabs_api_key') || import.meta.env.VITE_ELEVENLABS_API_KEY || '' : '';
+  });
+  const [elevenLabsVoiceId, setElevenLabsVoiceIdState] = useState<string>(() => {
+    return typeof window !== 'undefined' ? localStorage.getItem('elevenlabs_voice_id') || import.meta.env.VITE_ELEVENLABS_VOICE_ID || '21m00Tcm4TlvDq8ikWAM' : '21m00Tcm4TlvDq8ikWAM';
+  });
+  const [ttsVoiceKeyword, setTtsVoiceKeywordState] = useState<string>(() => {
+    return typeof window !== 'undefined' ? localStorage.getItem('tts_voice_keyword') || 'google' : 'google';
+  });
+  const [ttsRate, setTtsRateState] = useState<number>(() => {
+    return typeof window !== 'undefined' ? parseFloat(localStorage.getItem('tts_rate') || '1.05') : 1.05;
+  });
+
   // Escuta as configurações de IA no Firestore em tempo real
   useEffect(() => {
     const configRef = doc(db, 'settings', 'ia_config');
@@ -48,6 +78,13 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
         if (data.geminiModel) setGeminiModelState(data.geminiModel);
         if (data.geminiApiKey !== undefined) setGeminiApiKeyState(data.geminiApiKey || '');
 
+        // TTS settings
+        if (data.ttsProvider) setTtsProviderState(data.ttsProvider as TTSProviderType);
+        if (data.elevenLabsApiKey !== undefined) setElevenLabsApiKeyState(data.elevenLabsApiKey || '');
+        if (data.elevenLabsVoiceId) setElevenLabsVoiceIdState(data.elevenLabsVoiceId);
+        if (data.ttsVoiceKeyword) setTtsVoiceKeywordState(data.ttsVoiceKeyword);
+        if (data.ttsRate !== undefined) setTtsRateState(typeof data.ttsRate === 'number' ? data.ttsRate : parseFloat(data.ttsRate || '1.05'));
+
         // Atualizar localStorage local como cache de redundância
         if (typeof window !== 'undefined') {
           if (data.provider) localStorage.setItem('ai_provider', data.provider);
@@ -59,6 +96,16 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
           } else {
             localStorage.removeItem('gemini_api_key');
           }
+
+          if (data.ttsProvider) localStorage.setItem('tts_provider', data.ttsProvider);
+          if (data.elevenLabsApiKey) {
+            localStorage.setItem('elevenlabs_api_key', data.elevenLabsApiKey);
+          } else {
+            localStorage.removeItem('elevenlabs_api_key');
+          }
+          if (data.elevenLabsVoiceId) localStorage.setItem('elevenlabs_voice_id', data.elevenLabsVoiceId);
+          if (data.ttsVoiceKeyword) localStorage.setItem('tts_voice_keyword', data.ttsVoiceKeyword);
+          if (data.ttsRate !== undefined) localStorage.setItem('tts_rate', String(data.ttsRate));
         }
       }
     }, (error) => {
@@ -75,6 +122,13 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     ollamaBaseUrl: string;
     geminiModel: string;
     geminiApiKey: string;
+    
+    // TTS Updates
+    ttsProvider: TTSProviderType;
+    elevenLabsApiKey: string;
+    elevenLabsVoiceId: string;
+    ttsVoiceKeyword: string;
+    ttsRate: number;
   }>) => {
     try {
       const configRef = doc(db, 'settings', 'ia_config');
@@ -128,6 +182,51 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     syncToFirestore({ geminiApiKey: key });
   };
 
+  // TTS actions
+  const setTtsProvider = (p: TTSProviderType) => {
+    setTtsProviderState(p);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('tts_provider', p);
+    }
+    syncToFirestore({ ttsProvider: p });
+  };
+
+  const setElevenLabsApiKey = (key: string) => {
+    setElevenLabsApiKeyState(key);
+    if (typeof window !== 'undefined') {
+      if (key) {
+        localStorage.setItem('elevenlabs_api_key', key);
+      } else {
+        localStorage.removeItem('elevenlabs_api_key');
+      }
+    }
+    syncToFirestore({ elevenLabsApiKey: key });
+  };
+
+  const setElevenLabsVoiceId = (id: string) => {
+    setElevenLabsVoiceIdState(id);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('elevenlabs_voice_id', id);
+    }
+    syncToFirestore({ elevenLabsVoiceId: id });
+  };
+
+  const setTtsVoiceKeyword = (keyword: string) => {
+    setTtsVoiceKeywordState(keyword);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('tts_voice_keyword', keyword);
+    }
+    syncToFirestore({ ttsVoiceKeyword: keyword });
+  };
+
+  const setTtsRate = (rate: number) => {
+    setTtsRateState(rate);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('tts_rate', String(rate));
+    }
+    syncToFirestore({ ttsRate: rate });
+  };
+
   return (
     <SettingsContext.Provider value={{ 
       provider, 
@@ -139,7 +238,19 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
       geminiModel, 
       setGeminiModel, 
       geminiApiKey, 
-      setGeminiApiKey 
+      setGeminiApiKey,
+      
+      // TTS Settings
+      ttsProvider,
+      setTtsProvider,
+      elevenLabsApiKey,
+      setElevenLabsApiKey,
+      elevenLabsVoiceId,
+      setElevenLabsVoiceId,
+      ttsVoiceKeyword,
+      setTtsVoiceKeyword,
+      ttsRate,
+      setTtsRate
     }}>
       {children}
     </SettingsContext.Provider>

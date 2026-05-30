@@ -30,6 +30,8 @@ export function createSeguraBotGraph(
     const lastMessage = state.messages[state.messages.length - 1];
     const userText = lastMessage.content.toLowerCase();
     
+    console.log("[SeguraBotGraph:Supervisor] Iniciando decisão de rota para:", lastMessage.content);
+    
     // Bypass direto por palavra-chave para acelerar a resposta e evitar latência de LLM
     if (
       userText.includes("falar com humano") ||
@@ -44,6 +46,7 @@ export function createSeguraBotGraph(
       userText.includes("chame um atendente") ||
       userText.includes("transferir para humano")
     ) {
+      console.log("[SeguraBotGraph:Supervisor] Handoff humano detectado por palavra-chave.");
       return { nextAgent: "handoff_agent" };
     }
     
@@ -62,8 +65,10 @@ Mensagem do Usuário: "${lastMessage.content}"
 Resposta:`;
 
     try {
+      console.log("[SeguraBotGraph:Supervisor] Chamando IA...");
       const response = await aiService.generateResponse(state.messages, prompt);
       const cleanedResponse = response.trim().toLowerCase();
+      console.log("[SeguraBotGraph:Supervisor] IA respondeu com:", cleanedResponse);
 
       if (cleanedResponse.includes("knowledge_agent")) return { nextAgent: "knowledge_agent" };
       if (cleanedResponse.includes("support_agent")) return { nextAgent: "support_agent" };
@@ -74,19 +79,22 @@ Resposta:`;
       const text = lastMessage.content.toLowerCase();
       if (text.includes("cobertura") || text.includes("manual")) return { nextAgent: "knowledge_agent" };
       if (text.includes("meu") || text.includes("cadastro")) return { nextAgent: "support_agent" };
-      if (text.includes("humano") || text.includes("atendente") || text.includes("pessoa") || text.includes("corretor")) return { nextAgent: "handoff_agent" };
+      if (text.includes("humano") || text.includes("atendente") || text.includes("persona") || text.includes("corretor")) return { nextAgent: "handoff_agent" };
     }
     
+    console.log("[SeguraBotGraph:Supervisor] Nenhuma rota de agente especializada casou. Usando general_agent.");
     return { nextAgent: "general_agent" };
   };
 
   // Nó do Especialista em RAG (Usa Gemini)
   const knowledgeNode = async (state: typeof SeguraBotState.State) => {
     const lastMessage = state.messages[state.messages.length - 1];
+    console.log("[SeguraBotGraph:Knowledge] Iniciando busca RAG para:", lastMessage.content);
     
     let context = "Nenhuma informação encontrada na base de conhecimento.";
     if (kbRepo) {
       const docs = await kbRepo.searchRelevantContext(lastMessage.content);
+      console.log("[SeguraBotGraph:Knowledge] Contextos relevantes encontrados:", docs.length);
       if (docs.length > 0) {
         context = docs.map(doc => `[FAQ]: Q: ${doc.question} R: ${doc.answer}`).join("\n\n");
       }
@@ -99,7 +107,9 @@ ${context}
  
 Pergunta: ${lastMessage.content}`;
 
+    console.log("[SeguraBotGraph:Knowledge] Gerando resposta baseada em RAG...");
     const response = await aiService.generateResponse(state.messages, prompt);
+    console.log("[SeguraBotGraph:Knowledge] Resposta gerada:", response);
     return { finalResponse: response };
   };
 

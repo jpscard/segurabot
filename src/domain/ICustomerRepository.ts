@@ -9,4 +9,5 @@ export interface ICustomerRepository {
   updateSupportTicketStatus(ticketId: string, status: string): Promise<void>;
   subscribeToCustomerProfile(userId: string, callback: (profile: CustomerProfile | null) => void): () => void;
   subscribeToSupportTickets(userId: string, callback: (tickets: SupportTicket[]) => void): () => void;
+  subscribeToAllSupportTickets(callback: (tickets: SupportTicket[]) => void): () => void;
 }

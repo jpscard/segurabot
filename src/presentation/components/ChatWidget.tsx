@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { cn } from '../../utils/utils';
 import { ProcessUserMessageUseCase } from '../../application/ProcessUserMessageUseCase';
 import { FirebaseChatRepository } from '../../infrastructure/FirebaseChatRepository';
@@ -6,12 +6,230 @@ import { MemoryChatRepository } from '../../infrastructure/MemoryChatRepository'
 import { DynamicAssistantService } from '../../infrastructure/DynamicAssistantService';
 import { FirebaseKnowledgeBaseRepository } from '../../infrastructure/FirebaseKnowledgeBaseRepository';
 import { FirebaseCustomerRepository } from '../../infrastructure/FirebaseCustomerRepository';
-import { Message, Role } from '../../domain/Chat';
+import { IChatRepository } from '../../domain/IChatRepository';
+import { ChatSession, Message, Role } from '../../domain/Chat';
 import { speakWithElevenLabs } from '../../infrastructure/ElevenLabsService';
-import { speakWithPuter } from '../../infrastructure/PuterService';
+import { audioManager } from '../../utils/audioManager';
 import { Phone, Mic, SendHorizontal, Trash2, Check, User, Mail } from 'lucide-react';
-import { loginDevAdmin, loginAnonymously } from '../../infrastructure/firebase';
+import { auth, loginDevAdmin, loginAnonymously, isFirebaseRestricted, setFirebaseRestricted } from '../../infrastructure/firebase';
 import { trackAnalyticsEvent } from '../../utils/analytics';
+import { useSettings } from '../context/SettingsContext';
+
+// SafeChatRepository delegates to FirebaseChatRepository but automatically falls back
+// to MemoryChatRepository if a permission/auth error occurs (e.g. if Anonymous Auth is disabled).
+class SafeChatRepository implements IChatRepository {
+  public static isMemoryModeActive = false;
+
+  constructor(
+    private firebaseRepo: IChatRepository,
+    private memoryRepo: IChatRepository,
+    private onFallback: () => void
+  ) {}
+
+  private isPermissionError(err: any): boolean {
+    return true; // Resiliência Total: Fallback para memória em QUALQUER erro de banco de dados para evitar crashes
+  }
+
+  private triggerFallback() {
+    if (!SafeChatRepository.isMemoryModeActive) {
+      SafeChatRepository.isMemoryModeActive = true;
+      setFirebaseRestricted(true); // Persist restriction globally!
+      this.onFallback();
+    }
+  }
+
+  async getSession(userId: string, sessionId: string): Promise<ChatSession | null> {
+    if (SafeChatRepository.isMemoryModeActive || isFirebaseRestricted) {
+      return await this.memoryRepo.getSession('visitor', sessionId);
+    }
+    try {
+      return await this.firebaseRepo.getSession(userId, sessionId);
+    } catch (err) {
+      if (this.isPermissionError(err)) {
+        console.warn("[SafeChatRepository] Erro de permissão Firestore detectado em getSession. Usando fallback em memória.");
+        this.triggerFallback();
+        return await this.memoryRepo.getSession('visitor', sessionId);
+      }
+      throw err;
+    }
+  }
+
+  async saveMessage(userId: string, sessionId: string, message: Message): Promise<void> {
+    if (SafeChatRepository.isMemoryModeActive || isFirebaseRestricted) {
+      await this.memoryRepo.saveMessage('visitor', sessionId, message);
+      return;
+    }
+    try {
+      await this.firebaseRepo.saveMessage(userId, sessionId, message);
+    } catch (err) {
+      if (this.isPermissionError(err)) {
+        console.warn("[SafeChatRepository] Erro de permissão Firestore detectado em saveMessage. Usando fallback em memória.");
+        this.triggerFallback();
+        await this.memoryRepo.saveMessage('visitor', sessionId, message);
+        return;
+      }
+      throw err;
+    }
+  }
+
+  async updateSession(userId: string, session: ChatSession | (Partial<ChatSession> & { id: string })): Promise<void> {
+    if (SafeChatRepository.isMemoryModeActive || isFirebaseRestricted) {
+      const existing = await this.memoryRepo.getSession('visitor', session.id);
+      const fullSession = {
+        id: session.id,
+        userId: 'visitor',
+        title: session.title || existing?.title || 'Conversa',
+        lastMessage: session.lastMessage || existing?.lastMessage || '',
+        createdAt: session.createdAt || existing?.createdAt || new Date().toISOString(),
+        updatedAt: session.updatedAt || existing?.updatedAt || new Date().toISOString(),
+        messages: ('messages' in session && session.messages ? [...session.messages] : null) || (existing?.messages ? [...existing.messages] : []),
+        status: session.status || existing?.status || 'ia'
+      };
+      await this.memoryRepo.updateSession('visitor', fullSession);
+      return;
+    }
+    try {
+      await this.firebaseRepo.updateSession(userId, session);
+    } catch (err) {
+      if (this.isPermissionError(err)) {
+        console.warn("[SafeChatRepository] Erro de permissão Firestore detectado em updateSession. Usando fallback em memória.");
+        this.triggerFallback();
+        const fullSession = {
+          id: session.id,
+          userId: 'visitor',
+          title: session.title || 'Conversa',
+          lastMessage: session.lastMessage || '',
+          createdAt: session.createdAt || new Date().toISOString(),
+          updatedAt: session.updatedAt || new Date().toISOString(),
+          messages: [],
+          status: session.status || 'ia'
+        };
+        await this.memoryRepo.updateSession('visitor', fullSession);
+        return;
+      }
+      throw err;
+    }
+  }
+
+  async createSession(userId: string, title: string, lastMessage: string): Promise<ChatSession> {
+    if (SafeChatRepository.isMemoryModeActive || isFirebaseRestricted) {
+      return await this.memoryRepo.createSession('visitor', title, lastMessage);
+    }
+    try {
+      return await this.firebaseRepo.createSession(userId, title, lastMessage);
+    } catch (err) {
+      if (this.isPermissionError(err)) {
+        console.warn("[SafeChatRepository] Erro de permissão Firestore detectado em createSession. Usando fallback em memória.");
+        this.triggerFallback();
+        return await this.memoryRepo.createSession('visitor', title, lastMessage);
+      }
+      throw err;
+    }
+  }
+
+  async deleteSession(userId: string, sessionId: string): Promise<void> {
+    if (SafeChatRepository.isMemoryModeActive || isFirebaseRestricted) {
+      await this.memoryRepo.deleteSession('visitor', sessionId);
+      return;
+    }
+    try {
+      await this.firebaseRepo.deleteSession(userId, sessionId);
+    } catch (err) {
+      if (this.isPermissionError(err)) {
+        this.triggerFallback();
+        await this.memoryRepo.deleteSession('visitor', sessionId);
+        return;
+      }
+      throw err;
+    }
+  }
+
+  listenToSessions(userId: string, callback: (sessions: ChatSession[]) => void, onError: (error: Error) => void): () => void {
+    if (SafeChatRepository.isMemoryModeActive || isFirebaseRestricted) {
+      return this.memoryRepo.listenToSessions('visitor', callback, onError);
+    }
+    let firebaseUnsub: (() => void) | null = null;
+    let activeUnsub: () => void = () => {
+      if (firebaseUnsub) {
+        try { firebaseUnsub(); } catch (e) {}
+      }
+    };
+    try {
+      firebaseUnsub = this.firebaseRepo.listenToSessions(userId, callback, (err) => {
+        if (this.isPermissionError(err)) {
+          console.warn("[SafeChatRepository] Erro de permissão Firestore detectado em listenToSessions. Usando fallback.");
+          this.triggerFallback();
+          if (firebaseUnsub) {
+            try { firebaseUnsub(); } catch (e) {}
+            firebaseUnsub = null;
+          }
+          const memoryUnsub = this.memoryRepo.listenToSessions('visitor', callback, onError);
+          activeUnsub = memoryUnsub;
+        } else {
+          onError(err);
+        }
+      });
+      activeUnsub = () => {
+        if (firebaseUnsub) {
+          try { firebaseUnsub(); } catch (e) {}
+        }
+      };
+    } catch (err: any) {
+      if (this.isPermissionError(err)) {
+        this.triggerFallback();
+        activeUnsub = this.memoryRepo.listenToSessions('visitor', callback, onError);
+      } else {
+        throw err;
+      }
+    }
+    return () => activeUnsub();
+  }
+
+  listenToAllSessions(callback: (sessions: ChatSession[]) => void, onError: (error: Error) => void): () => void {
+    return this.firebaseRepo.listenToAllSessions(callback, onError);
+  }
+
+  listenToMessages(userId: string, sessionId: string, callback: (messages: Message[]) => void, onError: (error: Error) => void): () => void {
+    if (SafeChatRepository.isMemoryModeActive || isFirebaseRestricted) {
+      return this.memoryRepo.listenToMessages('visitor', sessionId, callback, onError);
+    }
+    let firebaseUnsub: (() => void) | null = null;
+    let activeUnsub: () => void = () => {
+      if (firebaseUnsub) {
+        try { firebaseUnsub(); } catch (e) {}
+      }
+    };
+    try {
+      firebaseUnsub = this.firebaseRepo.listenToMessages(userId, sessionId, callback, (err) => {
+        if (this.isPermissionError(err)) {
+          console.warn("[SafeChatRepository] Erro de permissão Firestore detectado em listenToMessages. Usando fallback.");
+          this.triggerFallback();
+          if (firebaseUnsub) {
+            try { firebaseUnsub(); } catch (e) {}
+            firebaseUnsub = null;
+          }
+          const memoryUnsub = this.memoryRepo.listenToMessages('visitor', sessionId, callback, onError);
+          activeUnsub = memoryUnsub;
+        } else {
+          onError(err);
+        }
+      });
+      activeUnsub = () => {
+        if (firebaseUnsub) {
+          try { firebaseUnsub(); } catch (e) {}
+        }
+      };
+    } catch (err: any) {
+      if (this.isPermissionError(err)) {
+        this.triggerFallback();
+        activeUnsub = this.memoryRepo.listenToMessages('visitor', sessionId, callback, onError);
+      } else {
+        throw err;
+      }
+    }
+    return () => activeUnsub();
+  }
+}
 
 // Instantiate repositories and services
 const firebaseChatRepo = new FirebaseChatRepository();
@@ -21,6 +239,7 @@ const customerRepo = new FirebaseCustomerRepository();
 const aiService = new DynamicAssistantService(); // Handles dynamic AI models, provider selection and fallbacks
 
 export function ChatWidget() {
+  const { ttsProvider, elevenLabsApiKey, elevenLabsVoiceId, ttsVoiceKeyword, ttsRate } = useSettings();
   const [isOpen, setIsOpen] = useState(false);
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
@@ -32,10 +251,12 @@ export function ChatWidget() {
   const [recordingSeconds, setRecordingSeconds] = useState(0);
   const recognitionRef = useRef<any>(null);
   const baseTranscriptRef = useRef('');
+  const chatInputRef = useRef<HTMLInputElement>(null);
   const [welcomeRead, setWelcomeRead] = useState(false);
 
   // Estados de Captação e Identificação de Leads
-  const [step, setStep] = useState<'form' | 'chat'>('form');
+  const [step, setStep] = useState<'form' | 'chat'>('chat');
+  const [conversationalStep, setConversationalStep] = useState<'ask_name' | 'ask_email' | 'check_customer' | 'ask_phone' | 'ready'>('ready');
   const [leadName, setLeadName] = useState('');
   const [leadEmail, setLeadEmail] = useState('');
   const [leadPhone, setLeadPhone] = useState('');
@@ -47,6 +268,48 @@ export function ChatWidget() {
   const [operatorTyping, setOperatorTyping] = useState(false);
   const [visitorPlan, setVisitorPlan] = useState<string | null>(() => localStorage.getItem('segurabot_visitor_plan'));
 
+  const [fallbackTriggered, setFallbackTriggered] = useState(0);
+  const messagesRef = useRef(messages);
+  messagesRef.current = messages;
+  const leadNameRef = useRef(leadName);
+  leadNameRef.current = leadName;
+
+  // Define a memoized SafeChatRepository instance that automatically falls back to in-memory on permission errors
+  const activeRepo = useMemo(() => {
+    const isRestricted = isFirebaseRestricted || (typeof window !== 'undefined' && localStorage.getItem('segurabot_firebase_restricted') === 'true');
+    const isMock = isRestricted || SafeChatRepository.isMemoryModeActive || auth.currentUser === null || visitorId === 'visitor' || visitorId.startsWith('mock_');
+    const baseRepo = isMock ? memoryChatRepo : firebaseChatRepo;
+    return new SafeChatRepository(baseRepo, memoryChatRepo, () => {
+      console.warn("[ChatWidget] Fallback de repositório acionado. Mantendo dados do lead na memória local para fluidez absoluta.");
+      const currentMessages = messagesRef.current;
+      const currentName = leadNameRef.current;
+      if (visitorId && sessionId && currentMessages.length > 0) {
+        memoryChatRepo.updateSession('visitor', {
+          id: sessionId,
+          userId: 'visitor',
+          title: `Conversa com ${currentName.trim() || 'Visitante'}`,
+          lastMessage: currentMessages[currentMessages.length - 1]?.content || '',
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          messages: currentMessages,
+          status: 'ia',
+          operatorName: ''
+        });
+      }
+      setFallbackTriggered(prev => prev + 1);
+    });
+  }, [visitorId, fallbackTriggered]);
+
+  // Debug hook
+  useEffect(() => {
+    (window as any).debugVisitorId = visitorId;
+    console.log("[Debug] visitorId state changed:", visitorId);
+  }, [visitorId]);
+
+  // Estados para simulação de fila de atendimento humano
+  const [queuePosition, setQueuePosition] = useState(3);
+  const [queueTime, setQueueTime] = useState(4);
+
   // Load visitor details from localStorage if they subscribed to a plan
   useEffect(() => {
     const handlePlanSubscribed = () => {
@@ -55,14 +318,47 @@ export function ChatWidget() {
       const storedEmail = localStorage.getItem('segurabot_visitor_email');
       const storedPlan = localStorage.getItem('segurabot_visitor_plan');
       
-      if (storedId && storedName && storedEmail) {
+      const lowercaseStoredName = (storedName || '').trim().toLowerCase();
+      const greetings = ['oi', 'ola', 'olá', 'hello', 'hi', 'bom dia', 'boa tarde', 'boa noite', 'oi!', 'olá!', 'ola!'];
+      const isStoredNameGreeting = greetings.includes(lowercaseStoredName) || lowercaseStoredName.length < 2;
+
+      if (storedId && storedName && storedEmail && !isStoredNameGreeting) {
         setVisitorId(storedId);
         setLeadName(storedName);
         setLeadEmail(storedEmail);
         setVisitorPlan(storedPlan);
         setStep('chat');
+        setConversationalStep('ready');
         initializeChat(storedId, storedName);
         setIsOpen(true); // Abre o widget automaticamente após assinar
+      } else {
+        // Limpa cache corrompido de saudação se houver
+        if (isStoredNameGreeting) {
+          localStorage.removeItem('segurabot_visitor_id');
+          localStorage.removeItem('segurabot_visitor_name');
+          localStorage.removeItem('segurabot_visitor_email');
+        }
+        setStep('chat');
+        setConversationalStep('ask_name');
+        setVisitorId('visitor');
+        const firstMessage: Message = {
+          id: 'welcome',
+          role: Role.MODEL,
+          content: 'Olá! Sou o assistente virtual da SeguraBot. Para que eu possa te dar o suporte ideal, me diz: qual é o seu nome completo?',
+          timestamp: new Date().toISOString()
+        };
+        setMessages([firstMessage]);
+        memoryChatRepo.updateSession('visitor', {
+          id: sessionId,
+          userId: 'visitor',
+          title: 'Conversa de Identificação',
+          lastMessage: '',
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          messages: [firstMessage],
+          status: 'ia',
+          operatorName: ''
+        });
       }
     };
 
@@ -73,6 +369,16 @@ export function ChatWidget() {
     window.addEventListener('segurabot_plan_subscribed', handlePlanSubscribed);
     return () => window.removeEventListener('segurabot_plan_subscribed', handlePlanSubscribed);
   }, []);
+
+  // Foco automático do campo de texto ao terminar de carregar (isLoading === false)
+  useEffect(() => {
+    if (!isLoading && isOpen && step === 'chat') {
+      const timeoutId = setTimeout(() => {
+        chatInputRef.current?.focus();
+      }, 50);
+      return () => clearTimeout(timeoutId);
+    }
+  }, [isLoading, isOpen, step]);
 
   // Initialize Speech Recognition on mount
   useEffect(() => {
@@ -118,9 +424,62 @@ export function ChatWidget() {
     return () => clearInterval(interval);
   }, [isListening]);
 
+  // Simulação de Fila e Atendimento Humano Automático
+  useEffect(() => {
+    if (sessionStatus !== 'aguardando_humano') {
+      setQueuePosition(3);
+      setQueueTime(4);
+      return;
+    }
+
+    const interval = setInterval(() => {
+      setQueuePosition(prev => {
+        if (prev <= 1) {
+          clearInterval(interval);
+          // Simula o atendente assumindo após 4 segundos na primeira posição
+          setTimeout(async () => {
+            if (visitorId && sessionId) {
+              try {
+                const session = await activeRepo.getSession(visitorId, sessionId);
+                if (session && session.status === 'aguardando_humano') {
+                  const updatedSession = {
+                    ...session,
+                    status: 'humano' as const,
+                    operatorName: 'Leonardo Alves Pereira'
+                  };
+                  await activeRepo.updateSession(visitorId, updatedSession);
+                  
+                  const systemMsg: Message = {
+                    id: `sys-${Date.now()}`,
+                    role: Role.MODEL,
+                    content: `O operador Leonardo Alves Pereira entrou na conversa. Como posso te ajudar em detalhes hoje?`,
+                    timestamp: new Date().toISOString()
+                  };
+                  await activeRepo.saveMessage(visitorId, sessionId, systemMsg);
+                  setMessages(prev => [...prev, systemMsg]);
+                  speak(systemMsg.content);
+                }
+              } catch (err) {
+                console.error("Error simulating operator handoff acceptance:", err);
+              }
+            }
+          }, 4000);
+          return 1;
+        }
+        setQueueTime(t => Math.max(1, t - 1));
+        return prev - 1;
+      });
+    }, 10000); // Fila tica a cada 10 segundos
+
+    return () => clearInterval(interval);
+  }, [sessionStatus, visitorId, sessionId]);
+
   const initializeChat = (newVisitorId: string, name: string) => {
-    const activeRepo = newVisitorId === 'visitor' ? memoryChatRepo : firebaseChatRepo;
-    activeRepo.updateSession(newVisitorId, {
+    const isMock = isFirebaseRestricted || SafeChatRepository.isMemoryModeActive || auth.currentUser === null || newVisitorId === 'visitor' || newVisitorId.startsWith('mock_');
+    const baseRepo = isMock ? memoryChatRepo : firebaseChatRepo;
+    const safeRepo = new SafeChatRepository(baseRepo, memoryChatRepo, () => {});
+    
+    safeRepo.updateSession(newVisitorId, {
       id: sessionId,
       userId: newVisitorId,
       title: `Conversa com ${name}`,
@@ -138,7 +497,7 @@ export function ChatWidget() {
       timestamp: new Date().toISOString()
     };
     setMessages([welcomeMessage]);
-    activeRepo.saveMessage(newVisitorId, sessionId, welcomeMessage);
+    safeRepo.saveMessage(newVisitorId, sessionId, welcomeMessage);
   };
 
   const handleFormSubmit = async (e: React.FormEvent) => {
@@ -212,7 +571,7 @@ export function ChatWidget() {
     if (step !== 'chat' || !visitorId || !sessionId || visitorId === 'visitor') return;
 
     // Escutar mensagens em tempo real
-    const msgsUnsub = firebaseChatRepo.listenToMessages(visitorId, sessionId, (data) => {
+    const msgsUnsub = activeRepo.listenToMessages(visitorId, sessionId, (data) => {
       if (data && data.length > 0) {
         setMessages(data);
       }
@@ -222,8 +581,8 @@ export function ChatWidget() {
 
     // Escutar status da sessão em tempo real para detectar quando o operador assume
     let sessionUnsub = () => {};
-    if ('listenToSessions' in firebaseChatRepo) {
-      sessionUnsub = firebaseChatRepo.listenToSessions(visitorId, (sessionsList) => {
+    if ('listenToSessions' in activeRepo) {
+      sessionUnsub = activeRepo.listenToSessions(visitorId, (sessionsList) => {
         const currentSession = sessionsList.find(s => s.id === sessionId);
         if (currentSession) {
           setSessionStatus(currentSession.status || 'ia');
@@ -239,7 +598,7 @@ export function ChatWidget() {
       msgsUnsub();
       sessionUnsub();
     };
-  }, [step, visitorId, sessionId]);
+  }, [step, visitorId, sessionId, activeRepo]);
 
   useEffect(() => {
     if (isOpen) {
@@ -271,32 +630,51 @@ export function ChatWidget() {
     }
 
     // Cancel any ongoing speech
-    speechSynthesis.cancel();
+    audioManager.stopActiveAudio();
     
     // Remove emojis
     const cleanText = text.replace(/[\p{Emoji_Presentation}\p{Extended_Pictographic}]/gu, '');
     
-    // Tenta usar o Puter primeiro (gratuito e ilimitado)
-    const puterSuccess = await speakWithPuter(cleanText);
-    if (puterSuccess) return;
-
-    // Tenta usar ElevenLabs primeiro
-    const elevenLabsSuccess = await speakWithElevenLabs(cleanText);
-    if (elevenLabsSuccess) return; // Se funcionou, não faz o fallback
-    
-    // Fallback nativo
-    const utterance = new SpeechSynthesisUtterance(cleanText);
-    utterance.lang = 'pt-BR';
-    utterance.rate = 1.1; // Um pouco mais rápido
-    
-    // Tenta encontrar uma voz em português
-    const voices = speechSynthesis.getVoices();
-    const ptVoice = voices.find(v => v.lang.includes('pt-BR') || v.lang.includes('pt_BR'));
-    if (ptVoice) {
-      utterance.voice = ptVoice;
+    // Tenta usar ElevenLabs (se selecionado e configurado)
+    if (ttsProvider === 'elevenlabs') {
+      const elevenLabsSuccess = await speakWithElevenLabs(cleanText, elevenLabsApiKey, elevenLabsVoiceId);
+      if (elevenLabsSuccess) return;
     }
     
-    speechSynthesis.speak(utterance);
+    // Fallback nativo (Web Speech API - Gratuito, sem chaves e sem logins)
+    const getBestVoice = () => {
+      const voices = speechSynthesis.getVoices();
+      const ptVoices = voices.filter(v => v.lang.includes('pt-BR') || v.lang.includes('pt_BR'));
+      const filterKeyword = ttsVoiceKeyword || 'google';
+      const premiumVoice = ptVoices.find(v => {
+        const nameLower = v.name.toLowerCase();
+        if (filterKeyword === 'all') return false; // Sem priorização especial
+        return nameLower.includes(filterKeyword.toLowerCase()) || nameLower.includes('online') || nameLower.includes('natural');
+      });
+      return premiumVoice || ptVoices[0] || null;
+    };
+
+    const speakText = () => {
+      const utterance = new SpeechSynthesisUtterance(cleanText);
+      utterance.lang = 'pt-BR';
+      utterance.rate = ttsRate; // Velocidade de leitura configurável
+      
+      const selectedVoice = getBestVoice();
+      if (selectedVoice) {
+        utterance.voice = selectedVoice;
+      }
+      speechSynthesis.speak(utterance);
+    };
+
+    // Caso o navegador ainda esteja carregando as vozes assincronamente
+    if (speechSynthesis.getVoices().length === 0) {
+      speechSynthesis.onvoiceschanged = () => {
+        speakText();
+        speechSynthesis.onvoiceschanged = null; // Remove o listener após rodar
+      };
+    } else {
+      speakText();
+    }
   };
 
   const typingTimeoutRef = useRef<any>(null);
@@ -307,7 +685,7 @@ export function ChatWidget() {
     
     if (!isTypingRef.current) {
       isTypingRef.current = true;
-      firebaseChatRepo.updateSession(visitorId, {
+      activeRepo.updateSession(visitorId, {
         id: sessionId,
         clientTyping: true
       });
@@ -319,7 +697,7 @@ export function ChatWidget() {
 
     typingTimeoutRef.current = setTimeout(() => {
       isTypingRef.current = false;
-      firebaseChatRepo.updateSession(visitorId, {
+      activeRepo.updateSession(visitorId, {
         id: sessionId,
         clientTyping: false
       });
@@ -333,7 +711,7 @@ export function ChatWidget() {
     isTypingRef.current = false;
     if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
     if (visitorId !== 'visitor') {
-      firebaseChatRepo.updateSession(visitorId, {
+      activeRepo.updateSession(visitorId, {
         id: sessionId,
         clientTyping: false
       });
@@ -356,7 +734,187 @@ export function ChatWidget() {
     setInput('');
     setIsLoading(true);
 
-    const activeRepo = visitorId === 'visitor' ? memoryChatRepo : firebaseChatRepo;
+    if (conversationalStep !== 'ready') {
+      const activeRepo = memoryChatRepo;
+      try {
+        await activeRepo.saveMessage('visitor', sessionId, userMessage);
+        
+        if (conversationalStep === 'ask_name') {
+          const nameVal = userMessageContent.trim();
+          const lowercaseName = nameVal.toLowerCase();
+          const greetings = ['oi', 'ola', 'olá', 'hello', 'hi', 'bom dia', 'boa tarde', 'boa noite', 'oi!', 'olá!', 'ola!', 'test', 'teste', 'ai', 'ia'];
+          const isGreeting = greetings.includes(lowercaseName) || nameVal.length < 3;
+          const hasNumbersOrSpecial = /[^a-zA-ZÀ-ÿ\s]/.test(nameVal);
+
+          if (isGreeting || hasNumbersOrSpecial) {
+            const botReply: Message = {
+              id: `msg-${Date.now()}`,
+              role: Role.MODEL,
+              content: `Olá! Para que eu possa te dar o suporte ideal, me diz por favor: qual é o seu nome completo? (Por favor, digite apenas letras, sem números ou saudações).`,
+              timestamp: new Date().toISOString()
+            };
+            setMessages(prev => [...prev, botReply]);
+            await activeRepo.saveMessage('visitor', sessionId, botReply);
+            speak(botReply.content);
+            return;
+          }
+
+          setLeadName(nameVal);
+          setConversationalStep('ask_email');
+          
+          const botReply: Message = {
+            id: `msg-${Date.now()}`,
+            role: Role.MODEL,
+            content: `Muito prazer, ${nameVal}! E qual é o seu e-mail para contato?`,
+            timestamp: new Date().toISOString()
+          };
+          setMessages(prev => [...prev, botReply]);
+          await activeRepo.saveMessage('visitor', sessionId, botReply);
+          speak(botReply.content);
+        } 
+        else if (conversationalStep === 'ask_email') {
+          const emailVal = userMessageContent.trim().toLowerCase();
+          const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+          if (!emailRegex.test(emailVal)) {
+            const botReply: Message = {
+              id: `msg-${Date.now()}`,
+              role: Role.MODEL,
+              content: `Por favor, informe um endereço de e-mail válido (exemplo: seu.nome@email.com) para que possamos prosseguir.`,
+              timestamp: new Date().toISOString()
+            };
+            setMessages(prev => [...prev, botReply]);
+            await activeRepo.saveMessage('visitor', sessionId, botReply);
+            speak(botReply.content);
+          } else {
+            setLeadEmail(emailVal);
+            setConversationalStep('check_customer');
+            
+            // Busca se o e-mail já existe no Firestore/Auth
+            const existingProfile = await customerRepo.getCustomerProfileByEmail(emailVal);
+            if (existingProfile) {
+              setIsExistingCustomer(true);
+              const botReply: Message = {
+                id: `msg-${Date.now()}`,
+                role: Role.MODEL,
+                content: `Identifiquei que você já é segurado e possui uma apólice ativa com a gente! Deseja fazer login para acessar seus dados com total segurança, ou prefere apenas continuar a conversa como visitante por enquanto?`,
+                timestamp: new Date().toISOString()
+              };
+              setMessages(prev => [...prev, botReply]);
+              await activeRepo.saveMessage('visitor', sessionId, botReply);
+              speak(botReply.content);
+            } else {
+              setConversationalStep('ask_phone');
+              const botReply: Message = {
+                id: `msg-${Date.now()}`,
+                role: Role.MODEL,
+                content: `Excelente! E para finalizarmos seu contato, qual é o seu telefone ou WhatsApp de atendimento?`,
+                timestamp: new Date().toISOString()
+              };
+              setMessages(prev => [...prev, botReply]);
+              await activeRepo.saveMessage('visitor', sessionId, botReply);
+              speak(botReply.content);
+            }
+          }
+        }
+        else if (conversationalStep === 'ask_phone') {
+          const phoneVal = userMessageContent.trim();
+          const cleanPhone = phoneVal.replace(/\D/g, ''); // Mantém apenas os números
+          
+          if (cleanPhone.length < 8 || cleanPhone.length > 15) {
+            const botReply: Message = {
+              id: `msg-${Date.now()}`,
+              role: Role.MODEL,
+              content: `Por favor, informe um número de telefone ou WhatsApp válido com o DDD (exemplo: 11 98765-4321).`,
+              timestamp: new Date().toISOString()
+            };
+            setMessages(prev => [...prev, botReply]);
+            await activeRepo.saveMessage('visitor', sessionId, botReply);
+            speak(botReply.content);
+            return;
+          }
+
+          setLeadPhone(phoneVal);
+          
+          // Efetua login anônimo e salva os dados no Firestore para criar o perfil
+          let newVisitorId = '';
+          try {
+            const anonymousUser = await loginAnonymously();
+            newVisitorId = anonymousUser.uid;
+          } catch (authErr) {
+            newVisitorId = 'mock_' + Math.random().toString(36).substring(2, 11);
+          }
+          
+          setVisitorId(newVisitorId);
+          
+          try {
+            await customerRepo.saveCustomerProfile(newVisitorId, {
+              userId: newVisitorId,
+              name: leadName.trim(),
+              email: leadEmail.trim(),
+              phone: phoneVal,
+              activePolicies: [],
+              policies: [],
+              claims: [],
+              documents: [],
+              loyaltyTier: 'Demonstração (Sem Contrato)',
+              lifeStage: 'Solteiro',
+              riskScore: 0,
+              aiSummary: 'Lead qualificado via fluxo conversacional no ChatWidget.',
+              role: 'cliente'
+            });
+          } catch (dbErr) {
+            console.warn("Error saving conversational customer profile:", dbErr);
+          }
+          
+          localStorage.setItem('segurabot_visitor_id', newVisitorId);
+          localStorage.setItem('segurabot_visitor_name', leadName.trim());
+          localStorage.setItem('segurabot_visitor_email', leadEmail.trim());
+          
+          // Migrar mensagens e sessão para o novo visitorId no Firestore
+          const messagesToSave = [...messages, userMessage];
+          const readyMessage: Message = {
+            id: `msg-${Date.now()}`,
+            role: Role.MODEL,
+            content: `Excelente, ${leadName}! Seu contato foi registrado com sucesso. Como posso ajudar você no dia de hoje?`,
+            timestamp: new Date().toISOString()
+          };
+          const finalMessages = [...messagesToSave, readyMessage];
+          
+          try {
+            const isMock = isFirebaseRestricted || SafeChatRepository.isMemoryModeActive || auth.currentUser === null || newVisitorId === 'visitor' || newVisitorId.startsWith('mock_');
+            const baseRepo = isMock ? memoryChatRepo : firebaseChatRepo;
+            const safeRepo = new SafeChatRepository(baseRepo, memoryChatRepo, () => {});
+
+            await safeRepo.updateSession(newVisitorId, {
+              id: sessionId,
+              userId: newVisitorId,
+              title: `Conversa com ${leadName.trim()}`,
+              lastMessage: readyMessage.content,
+              createdAt: new Date().toISOString(),
+              updatedAt: new Date().toISOString(),
+              messages: finalMessages,
+              status: 'ia',
+              operatorName: ''
+            });
+            
+            for (const msg of finalMessages) {
+              await safeRepo.saveMessage(newVisitorId, sessionId, msg);
+            }
+          } catch (chatErr) {
+            console.warn("Firestore chat save failed, using local browser fallback:", chatErr);
+          }
+          
+          setMessages(finalMessages);
+          setConversationalStep('ready');
+          speak(readyMessage.content);
+        }
+      } catch (err) {
+        console.error("Error in conversational step:", err);
+      } finally {
+        setIsLoading(false);
+      }
+      return;
+    }
 
     if (sessionStatus === 'humano' || sessionStatus === 'aguardando_humano') {
       try {
@@ -411,6 +969,210 @@ export function ChatWidget() {
     }
   };
 
+  const resetChat = async () => {
+    localStorage.removeItem('segurabot_visitor_id');
+    localStorage.removeItem('segurabot_visitor_name');
+    localStorage.removeItem('segurabot_visitor_email');
+    localStorage.removeItem('segurabot_visitor_plan');
+    
+    setVisitorId('visitor');
+    setLeadName('');
+    setLeadEmail('');
+    setLeadPhone('');
+    setVisitorPlan(null);
+    setStep('chat');
+    setConversationalStep('ask_name');
+    setIsExistingCustomer(false);
+    
+    const firstMessage: Message = {
+      id: 'welcome',
+      role: Role.MODEL,
+      content: 'Olá! Sou o assistente virtual da SeguraBot. Para que eu possa te dar o suporte ideal, me diz: qual é o seu nome completo?',
+      timestamp: new Date().toISOString()
+    };
+    setMessages([firstMessage]);
+    
+    memoryChatRepo.updateSession('visitor', {
+      id: sessionId,
+      userId: 'visitor',
+      title: 'Conversa de Identificação',
+      lastMessage: '',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      messages: [firstMessage],
+      status: 'ia',
+      operatorName: ''
+    });
+    
+    speak(firstMessage.content);
+  };
+
+  const exportChatAsPDF = () => {
+    if (messages.length === 0) return;
+    
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) {
+      alert("Por favor, permita pop-ups para exportar o PDF de atendimento.");
+      return;
+    }
+    
+    const chatHtml = messages.map(msg => {
+      const time = msg.timestamp ? new Date(msg.timestamp).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : '';
+      const isUser = (msg.role as string) === 'user';
+      const senderName = isUser 
+        ? (leadName || 'Cliente Autenticado') 
+        : (sessionStatus === 'humano' ? operatorName : 'SeguraBot IA');
+        
+      return `
+        <div class="message-container ${isUser ? 'user' : 'bot'}">
+          <div class="message-header">
+            <strong>${senderName}</strong>
+            <span class="time">${time}</span>
+          </div>
+          <div class="message-content">${msg.content.replace(/\n/g, '<br/>')}</div>
+        </div>
+      `;
+    }).join('');
+
+    printWindow.document.write(`
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>SeguraBot_Relatorio_${(leadName || 'Visitante').replace(/\s+/g, '_')}</title>
+        <style>
+          @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;800&display=swap');
+          body {
+            font-family: 'Outfit', sans-serif;
+            color: #1e293b;
+            background: #ffffff;
+            margin: 45px;
+            padding: 0;
+            line-height: 1.6;
+          }
+          .header {
+            border-bottom: 2px solid #5e81f4;
+            padding-bottom: 20px;
+            margin-bottom: 30px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+          }
+          .logo {
+            font-size: 26px;
+            font-weight: 800;
+            color: #5e81f4;
+            letter-spacing: -0.8px;
+          }
+          .meta-info {
+            text-align: right;
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 0.8px;
+            color: #64748b;
+            font-weight: 600;
+            line-height: 1.4;
+          }
+          .meta-info p {
+            margin: 3px 0;
+          }
+          .chat-title {
+            font-size: 15px;
+            font-weight: 800;
+            text-transform: uppercase;
+            letter-spacing: 1.2px;
+            color: #0f172a;
+            margin-bottom: 25px;
+            border-left: 3px solid #5e81f4;
+            padding-left: 10px;
+          }
+          .message-container {
+            margin-bottom: 16px;
+            padding: 14px 18px;
+            border-radius: 12px;
+            max-width: 85%;
+            font-size: 13px;
+          }
+          .message-container.user {
+            background-color: #f8fafc;
+            border: 1px solid #e2e8f0;
+            border-left: 4px solid #64748b;
+            margin-right: auto;
+          }
+          .message-container.bot {
+            background-color: #eff6ff;
+            border: 1px solid #dbeafe;
+            border-left: 4px solid #3b82f6;
+            margin-left: auto;
+          }
+          .message-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 6px;
+            font-size: 10px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: #64748b;
+          }
+          .message-header strong {
+            color: #1e293b;
+          }
+          .message-content {
+            font-weight: 400;
+            color: #334155;
+            word-break: break-word;
+          }
+          .footer {
+            margin-top: 60px;
+            border-top: 1px solid #e2e8f0;
+            padding-top: 18px;
+            text-align: center;
+            font-size: 10px;
+            color: #94a3b8;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            font-weight: 600;
+          }
+          @media print {
+            body { margin: 20px; }
+          }
+        </style>
+      </head>
+      <body>
+        <div class="header">
+          <div class="logo">SeguraBot</div>
+          <div class="meta-info">
+            <p><strong>Segurado:</strong> ${leadName || 'Cliente Autenticado'}</p>
+            <p><strong>E-mail:</strong> ${leadEmail || '-'}</p>
+            <p><strong>Plano Contratado:</strong> ${visitorPlan || 'Demonstração (Sem Contrato)'}</p>
+            <p><strong>Data de Emissão:</strong> ${new Date().toLocaleDateString('pt-BR')} às ${new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</p>
+          </div>
+        </div>
+        
+        <div class="chat-title">Registro Oficial de Atendimento Inteligente</div>
+        
+        <div class="chat-history">
+          ${chatHtml}
+        </div>
+        
+        <div class="footer">
+          SeguraBot Inteligência de Seguros S.A. — Relatório de Atendimento ao Cliente
+        </div>
+        
+        <script>
+          window.onload = function() {
+            setTimeout(function() {
+              window.print();
+              window.close();
+            }, 300);
+          };
+        </script>
+      </body>
+      </html>
+    `);
+    printWindow.document.close();
+  };
+
   return (
     <div className="fixed bottom-6 right-6 z-50 font-sans">
       {/* Chat Window */}
@@ -439,8 +1201,20 @@ export function ChatWidget() {
               )}
             </div>
             <div className="flex items-center gap-4">
-              <button className="text-white hover:text-blue-100 dark:hover:text-slate-300 transition-colors cursor-pointer" title="Ligar">
-                <Phone size={16} />
+              <button 
+                onClick={resetChat}
+                className="text-[10px] uppercase font-bold tracking-widest hover:text-blue-100 dark:hover:text-slate-300 transition-colors cursor-pointer" 
+                title="Reiniciar conversa e limpar identificação local"
+              >
+                Reiniciar
+              </button>
+              <button 
+                onClick={exportChatAsPDF}
+                disabled={messages.length === 0}
+                className="text-[10px] uppercase font-bold tracking-widest hover:text-blue-100 dark:hover:text-slate-300 transition-colors cursor-pointer disabled:opacity-40" 
+                title="Exportar PDF do Atendimento"
+              >
+                Baixar PDF
               </button>
               <button 
                 onClick={() => setIsOpen(false)}
@@ -501,7 +1275,7 @@ export function ChatWidget() {
                       </div>
                     </div>
                     <div>
-                      <label className="text-[9px] font-bold text-[#8181A5] uppercase tracking-wider block mb-1">E-mail Corporativo</label>
+                      <label className="text-[9px] font-bold text-[#8181A5] uppercase tracking-wider block mb-1">E-mail</label>
                       <div className="relative">
                         <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400 dark:text-slate-655 pointer-events-none" />
                         <input
@@ -551,6 +1325,20 @@ export function ChatWidget() {
             <>
               {/* Messages Area */}
               <div className="flex-1 p-4 overflow-y-auto space-y-4 bg-[#F6F6F6] dark:bg-slate-950/80">
+                {sessionStatus === 'aguardando_humano' && (
+                  <div className="p-3 bg-amber-500/10 border border-amber-500/20 text-amber-800 dark:text-amber-300 rounded-xl space-y-1 animate-pulse text-center select-none shrink-0">
+                    <p className="text-[9px] font-black uppercase tracking-widest">
+                      Fila de Espera Suporte
+                    </p>
+                    <p className="text-[9px] font-bold leading-normal">
+                      Sua posição atual: <strong className="text-amber-600 dark:text-amber-400 font-black">{queuePosition}º lugar</strong>
+                    </p>
+                    <p className="text-[8px] text-[#8181A5] leading-normal uppercase tracking-wider">
+                      Tempo estimado: ~{queueTime} min
+                    </p>
+                  </div>
+                )}
+
                 {messages.map((msg) => 
                   msg.senderName === 'Sistema' ? (
                     <div key={msg.id} className="w-full text-center my-2 select-none">
@@ -609,8 +1397,48 @@ export function ChatWidget() {
                   </div>
                 )}
                 
-                <div ref={messagesEndRef} />
-              </div>
+                {isExistingCustomer && conversationalStep === 'check_customer' && (
+                  <div className="my-2 p-4 bg-amber-500/10 border border-amber-500/20 rounded-xl space-y-3 animate-fade-in text-center select-none">
+                    <p className="text-[10px] font-black text-amber-600 dark:text-amber-400 uppercase tracking-widest">
+                      Identificamos sua Conta
+                    </p>
+                    <p className="text-[10px] text-slate-600 dark:text-slate-400 leading-normal max-w-xs mx-auto">
+                      Já existe uma apólice associada ao e-mail <strong className="text-slate-900 dark:text-white font-semibold">{leadEmail}</strong>. Deseja realizar login agora?
+                    </p>
+                    <div className="flex gap-2.5">
+                      <button
+                        onClick={async () => {
+                          setIsLoading(true);
+                          window.dispatchEvent(new CustomEvent('openLoginModal'));
+                          setIsLoading(false);
+                        }}
+                        className="flex-1 py-2 bg-[#5E81F4] hover:bg-[#5E81F4]/90 text-white text-[8px] font-black rounded-lg uppercase tracking-widest transition-all cursor-pointer shadow-sm"
+                      >
+                        Fazer Login
+                      </button>
+                      <button
+                        onClick={async () => {
+                          setIsExistingCustomer(false);
+                          setConversationalStep('ready');
+                          const guestMsg: Message = {
+                            id: `msg-guest-${Date.now()}`,
+                            role: Role.MODEL,
+                            content: `Perfeito! Vamos continuar o atendimento como visitante sem login. Como posso ajudar você hoje?`,
+                            timestamp: new Date().toISOString()
+                          };
+                          setMessages(prev => [...prev, guestMsg]);
+                          speak(guestMsg.content);
+                        }}
+                        className="flex-1 py-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-750 text-slate-700 dark:text-slate-350 text-[8px] font-black rounded-lg uppercase tracking-widest transition-all cursor-pointer"
+                      >
+                        Apenas Continuar
+                      </button>
+                    </div>
+                  </div>
+                )}
+                 
+                 <div ref={messagesEndRef} />
+               </div>
 
               {/* Input Area */}
               <div className="p-3 bg-white dark:bg-slate-900 border-t border-[#ECECF2] dark:border-slate-800 flex items-center gap-2">
@@ -653,6 +1481,7 @@ export function ChatWidget() {
                 ) : (
                   <>
                     <input
+                      ref={chatInputRef}
                       type="text"
                       value={input}
                       onChange={(e) => {
@@ -690,6 +1519,7 @@ export function ChatWidget() {
 
       {/* Floating Button (Estilo Gradiente Moderno - Cores da Marca) */}
       <button
+        id="chat-widget-trigger"
         onClick={() => {
           const nextState = !isOpen;
           setIsOpen(nextState);

@@ -69,9 +69,11 @@ export class ProcessUserMessageUseCase {
       };
       await this.chatRepository.saveMessage(userId, sessionId, aiMessage);
       
-      session.lastMessage = aiMessage.content;
-      session.updatedAt = new Date().toISOString();
-      await this.chatRepository.updateSession(userId, session);
+      await this.chatRepository.updateSession(userId, {
+        id: sessionId,
+        lastMessage: aiMessage.content,
+        updatedAt: new Date().toISOString()
+      });
       
       onChunk?.(aiMessage.content);
       return aiMessage;
@@ -79,21 +81,26 @@ export class ProcessUserMessageUseCase {
 
     // Bypass se estiver no modo de atendimento humano
     if (session.status === 'humano') {
-      session.lastMessage = userText;
-      session.updatedAt = new Date().toISOString();
-      await this.chatRepository.updateSession(userId, session);
+      await this.chatRepository.updateSession(userId, {
+        id: sessionId,
+        lastMessage: userText,
+        updatedAt: new Date().toISOString()
+      });
       return userMessage;
     }
 
     // 4. Invocar o Grafo de Agentes (LangGraph)
+    console.log("[ProcessUserMessageUseCase] Compilando grafo...");
     const graph = createSeguraBotGraph(this.chatRepository, this.aiService, this.knowledgeBaseRepository, this.customerRepository);
     
+    console.log("[ProcessUserMessageUseCase] Invocando grafo...", { historyCount: history.length, userId, sessionId });
     const result = await graph.invoke({
       messages: history,
       userId: userId,
       sessionId: sessionId
     });
     
+    console.log("[ProcessUserMessageUseCase] Grafo concluído com sucesso:", result);
     const aiResponseText = result.finalResponse || "Desculpe, não consegui processar sua resposta.";
 
     // 6. Create and save AI message
@@ -106,9 +113,11 @@ export class ProcessUserMessageUseCase {
     await this.chatRepository.saveMessage(userId, sessionId, aiMessage);
 
     // 7. Update session metadata in repository
-    session.lastMessage = aiResponseText;
-    session.updatedAt = new Date().toISOString();
-    await this.chatRepository.updateSession(userId, session);
+    await this.chatRepository.updateSession(userId, {
+      id: sessionId,
+      lastMessage: aiResponseText,
+      updatedAt: new Date().toISOString()
+    });
 
     return aiMessage;
   }

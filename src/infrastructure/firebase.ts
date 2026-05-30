@@ -1,8 +1,16 @@
 import { initializeApp } from 'firebase/app';
-import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, signInWithEmailAndPassword, sendPasswordResetEmail, signInAnonymously } from 'firebase/auth';
+import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, signInWithEmailAndPassword, sendPasswordResetEmail, signInAnonymously, EmailAuthProvider, linkWithCredential } from 'firebase/auth';
 import { getFirestore, doc, getDocFromServer } from 'firebase/firestore';
 import firebaseConfig from '../../firebase-applet-config.json';
 import { OperationType } from '../domain';
+
+// Keep track of Firestore/Auth restricted state locally to prevent slow network blocks when permissions are disabled
+export let isFirebaseRestricted = localStorage.getItem('segurabot_firebase_restricted') === 'true';
+
+export function setFirebaseRestricted(val: boolean) {
+  isFirebaseRestricted = val;
+  localStorage.setItem('segurabot_firebase_restricted', String(val));
+}
 
 const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
@@ -12,11 +20,32 @@ export const googleProvider = new GoogleAuthProvider();
 googleProvider.setCustomParameters({ prompt: 'select_account' });
 
 export async function loginAnonymously() {
+  if (isFirebaseRestricted) {
+    throw new Error('auth/admin-restricted-operation (Bypassed)');
+  }
   try {
     const result = await signInAnonymously(auth);
     return result.user;
-  } catch (error) {
+  } catch (error: any) {
     console.error('Anonymous Login error:', error);
+    if (error && (error.code === 'auth/admin-restricted-operation' || error.code === 'auth/operation-not-allowed' || error.message?.includes('restricted-operation'))) {
+      setFirebaseRestricted(true);
+    }
+    throw error;
+  }
+}
+
+export async function linkAnonymousAccount(email: string, password: string) {
+  try {
+    const user = auth.currentUser;
+    if (!user) {
+      throw new Error("Nenhum usuário ativo para associar.");
+    }
+    const credential = EmailAuthProvider.credential(email, password);
+    const result = await linkWithCredential(user, credential);
+    return result.user;
+  } catch (error) {
+    console.error('Account Link error:', error);
     throw error;
   }
 }

@@ -47,6 +47,7 @@ describe('ProcessUserMessageUseCase', () => {
       updateSupportTicketStatus: vi.fn(),
       subscribeToCustomerProfile: vi.fn(),
       subscribeToSupportTickets: vi.fn(),
+      subscribeToAllSupportTickets: vi.fn(),
     };
 
     useCase = new ProcessUserMessageUseCase(

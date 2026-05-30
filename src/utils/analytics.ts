@@ -23,7 +23,7 @@ const analyticsRepo = new FirebaseAnalyticsRepository();
 export async function trackAnalyticsEvent(eventType: 'page_view' | 'chat_click' | 'message_send' | 'conversion') {
   try {
     const sessionId = getSessionId();
-    const userId = auth.currentUser?.uid || undefined;
+    const userId = auth.currentUser?.uid || null;
     
     await analyticsRepo.track({
       eventType,

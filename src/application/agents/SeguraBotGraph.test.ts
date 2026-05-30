@@ -44,6 +44,7 @@ describe('SeguraBotGraph', () => {
       updateSupportTicketStatus: vi.fn(),
       subscribeToCustomerProfile: vi.fn(),
       subscribeToSupportTickets: vi.fn(),
+      subscribeToAllSupportTickets: vi.fn(),
     };
 
     vi.clearAllMocks();

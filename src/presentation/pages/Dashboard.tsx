@@ -8,6 +8,7 @@ import { useTheme } from '../context/ThemeContext';
 import { uploadRealDataToKnowledgeBase } from '../../utils/seedKnowledgeBase';
 import { uploadRealCrmData } from '../../utils/seedCrmData';
 import { CrmAdmin } from './CrmAdmin';
+import { ProductTour, TourStep } from '../components/ProductTour';
 import { 
   MessageSquare, 
   Database, 
@@ -31,7 +32,7 @@ import {
   Check
 } from 'lucide-react';
 import { speakWithElevenLabs } from '../../infrastructure/ElevenLabsService';
-import { speakWithPuter } from '../../infrastructure/PuterService';
+import { audioManager } from '../../utils/audioManager';
 
 const chatRepo = new FirebaseChatRepository();
 const kbRepo = new FirebaseKnowledgeBaseRepository();
@@ -51,6 +52,87 @@ import { ProcessUserMessageUseCase } from '../../application/ProcessUserMessageU
 export function Dashboard() {
   const [currentView, setCurrentView] = useState<'chat' | 'crm'>('chat');
   const [crmTab, setCrmTab] = useState<'dados' | 'chamados' | 'chat' | 'rag' | 'analytics' | 'ajustes_ia'>('dados');
+  const [tourActive, setTourActive] = useState(false);
+
+  const getTourSteps = (): TourStep[] => {
+    if (currentRole === 'admin') {
+      return [
+        {
+          targetId: 'crm-sidebar-sessions',
+          title: 'Fila de Atendimento Geral',
+          content: 'Monitore toda a operação ativa de atendimentos por IA e humanos do SeguraBot.',
+          position: 'right'
+        },
+        {
+          targetId: 'crm-menu-ajustes_ia',
+          title: 'Configurações de IA & Voz',
+          content: 'Troque o cérebro da IA (Gemini ou local Ollama), configure chaves da ElevenLabs e ajuste a central de áudio/voz.',
+          position: 'right'
+        },
+        {
+          targetId: 'crm-menu-rag',
+          title: 'Treinamento & Ingestão RAG',
+          content: 'Carregue novos datasets, FAQs em JSON/CSV e apólices em PDF para treinar a IA sem alucinar.',
+          position: 'right'
+        },
+        {
+          targetId: 'crm-menu-analytics',
+          title: 'Métricas Operacionais',
+          content: 'Monitore a taxa de conversão, NPS, tempo médio de atendimento e performance do time em tempo real.',
+          position: 'right'
+        }
+      ];
+    } else if (currentRole === 'atendente') {
+      return [
+        {
+          targetId: 'crm-sidebar-sessions',
+          title: 'Fila de Atendimento',
+          content: 'Aqui você acompanha todos os atendimentos ativos. Filtre entre chats da IA, aguardando humana ou concluídos.',
+          position: 'right'
+        },
+        {
+          targetId: 'crm-chat-history',
+          title: 'Histórico Central',
+          content: 'Leia o histórico completo do bot e clique em "Assumir" para iniciar o bate-papo humano em tempo real.',
+          position: 'left'
+        },
+        {
+          targetId: 'crm-customer-profile',
+          title: 'Dossiê do Cliente',
+          content: 'Visualize o perfil do segurado, chamados abertos e o resumo preditivo de risco gerado pela IA do Gemini.',
+          position: 'left'
+        },
+        {
+          targetId: 'crm-menu-chamados',
+          title: 'Gestão de Tickets',
+          content: 'Gerencie chamados, altere os status na fila e preencha as resoluções técnicas oficiais de forma simples.',
+          position: 'right'
+        }
+      ];
+    } else {
+      // Cliente/Segurado
+      return [
+        {
+          targetId: 'crm-menu-dados',
+          title: 'Dados do Segurado',
+          content: 'Acesse e gerencie seus dados cadastrais, CPF, e-mail e apólices contratadas de forma segura.',
+          position: 'right'
+        },
+        {
+          targetId: 'crm-menu-chamados',
+          title: 'Meus Chamados de Suporte',
+          content: 'Abra um novo chamado técnico ou acompanhe o status e a resolução dos seus tickets pendentes em tempo real.',
+          position: 'right'
+        },
+        {
+          targetId: 'crm-menu-chat',
+          title: 'Fale com o Atendimento',
+          content: 'Inicie um bate-papo em tempo real com nossa IA ou solicite transferência direta para um atendente humano.',
+          position: 'right'
+        }
+      ];
+    }
+  };
   const [clientSubView, setClientSubView] = useState<'chat' | 'seguros'>('chat');
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [mobileActiveSubView, setMobileActiveSubView] = useState<'list' | 'content'>('list');
@@ -71,9 +153,78 @@ export function Dashboard() {
   const recognitionRef = useRef<any>(null);
   const baseTranscriptRef = useRef('');
   
-  const { provider, setProvider, geminiApiKey, setGeminiApiKey, ollamaModel, setOllamaModel, ollamaBaseUrl } = useSettings();
+  const { 
+    provider, 
+    setProvider, 
+    geminiApiKey, 
+    setGeminiApiKey, 
+    ollamaModel, 
+    setOllamaModel, 
+    ollamaBaseUrl,
+    ttsProvider,
+    elevenLabsApiKey,
+    elevenLabsVoiceId,
+    ttsVoiceKeyword
+  } = useSettings();
   const { theme, setTheme } = useTheme();
   const user = auth.currentUser;
+
+  // Estados para simulação de fila de atendimento humano
+  const [queuePosition, setQueuePosition] = useState(3);
+  const [queueTime, setQueueTime] = useState(4);
+
+  useEffect(() => {
+    if (!activeSession || activeSession.status !== 'aguardando_humano') {
+      setQueuePosition(3);
+      setQueueTime(4);
+      return;
+    }
+
+    const interval = setInterval(() => {
+      setQueuePosition(prev => {
+        if (prev <= 1) {
+          clearInterval(interval);
+          // Simula o atendente assumindo após 4 segundos na primeira posição
+          setTimeout(async () => {
+            if (user && activeSession) {
+              try {
+                const updatedSession = {
+                  ...activeSession,
+                  status: 'humano' as const,
+                  operatorName: 'Leonardo Alves Pereira'
+                };
+                await chatRepo.updateSession(user.uid, updatedSession);
+                setActiveSession(updatedSession);
+                
+                const systemMsg: Message = {
+                  id: `sys-${Date.now()}`,
+                  role: Role.MODEL,
+                  content: `O operador Leonardo Alves Pereira entrou na conversa. Como posso te ajudar em detalhes hoje?`,
+                  timestamp: new Date().toISOString()
+                };
+                await chatRepo.saveMessage(user.uid, activeSession.id, systemMsg);
+                setMessages(prev => [...prev, systemMsg]);
+                
+                // Helper de voz se existir speak no escopo
+                if (typeof speak === 'function') {
+                  speak(systemMsg.content);
+                } else {
+                  speechSynthesis.speak(new SpeechSynthesisUtterance(systemMsg.content));
+                }
+              } catch (err) {
+                console.error("Error simulating operator handoff acceptance in dashboard:", err);
+              }
+            }
+          }, 4000);
+          return 1;
+        }
+        setQueueTime(t => Math.max(1, t - 1));
+        return prev - 1;
+      });
+    }, 10000); // Fila tica a cada 10 segundos
+
+    return () => clearInterval(interval);
+  }, [activeSession, user]);
 
   // Estados para modelos do Ollama
   const [availableModels, setAvailableModels] = useState<string[]>([]);
@@ -188,26 +339,49 @@ export function Dashboard() {
       return;
     }
 
-    speechSynthesis.cancel();
+    audioManager.stopActiveAudio();
     const cleanText = text.replace(/[\p{Emoji_Presentation}\p{Extended_Pictographic}]/gu, '');
     
-    const puterSuccess = await speakWithPuter(cleanText);
-    if (puterSuccess) return;
-
-    const elevenLabsSuccess = await speakWithElevenLabs(cleanText);
-    if (elevenLabsSuccess) return;
-    
-    const utterance = new SpeechSynthesisUtterance(cleanText);
-    utterance.lang = 'pt-BR';
-    utterance.rate = 1.1;
-    
-    const voices = speechSynthesis.getVoices();
-    const ptVoice = voices.find(v => v.lang.includes('pt-BR') || v.lang.includes('pt_BR'));
-    if (ptVoice) {
-      utterance.voice = ptVoice;
+    // Tenta usar ElevenLabs (se selecionado e configurado)
+    if (ttsProvider === 'elevenlabs') {
+      const elevenLabsSuccess = await speakWithElevenLabs(cleanText, elevenLabsApiKey, elevenLabsVoiceId);
+      if (elevenLabsSuccess) return;
     }
     
-    speechSynthesis.speak(utterance);
+    // Fallback nativo (Web Speech API - Gratuito, sem chaves e sem logins)
+    const getBestVoice = () => {
+      const voices = speechSynthesis.getVoices();
+      const ptVoices = voices.filter(v => v.lang.includes('pt-BR') || v.lang.includes('pt_BR'));
+      const filterKeyword = ttsVoiceKeyword || 'google';
+      const premiumVoice = ptVoices.find(v => {
+        const nameLower = v.name.toLowerCase();
+        if (filterKeyword === 'all') return false; // Sem priorização especial
+        return nameLower.includes(filterKeyword.toLowerCase()) || nameLower.includes('online') || nameLower.includes('natural');
+      });
+      return premiumVoice || ptVoices[0] || null;
+    };
+
+    const speakText = () => {
+      const utterance = new SpeechSynthesisUtterance(cleanText);
+      utterance.lang = 'pt-BR';
+      utterance.rate = 1.05; // Ajuste suave de velocidade
+      
+      const selectedVoice = getBestVoice();
+      if (selectedVoice) {
+        utterance.voice = selectedVoice;
+      }
+      speechSynthesis.speak(utterance);
+    };
+
+    // Caso o navegador ainda esteja carregando as vozes assincronamente
+    if (speechSynthesis.getVoices().length === 0) {
+      speechSynthesis.onvoiceschanged = () => {
+        speakText();
+        speechSynthesis.onvoiceschanged = null; // Remove o listener após rodar
+      };
+    } else {
+      speakText();
+    }
   };
 
   // Load Customer Profile
@@ -339,6 +513,172 @@ export function Dashboard() {
     } catch (error) {
       handleFirestoreError(error as Error, OperationType.DELETE, `users/${user.uid}/chat_sessions/${id}`);
     }
+  };
+
+  const exportChatAsPDF = () => {
+    if (messages.length === 0) return;
+    
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) {
+      alert("Por favor, permita pop-ups para exportar o PDF de atendimento.");
+      return;
+    }
+    
+    const chatHtml = messages.map(msg => {
+      const time = msg.timestamp ? new Date(msg.timestamp).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : '';
+      const isUser = msg.role === Role.USER;
+      const senderName = isUser 
+        ? (profile?.name || 'Cliente Autenticado') 
+        : (activeSession?.status === 'humano' ? (activeSession.operatorName || 'Atendente Humano') : 'SeguraBot IA');
+        
+      return `
+        <div class="message-container ${isUser ? 'user' : 'bot'}">
+          <div class="message-header">
+            <strong>${senderName}</strong>
+            <span class="time">${time}</span>
+          </div>
+          <div class="message-content">${msg.content.replace(/\n/g, '<br/>')}</div>
+        </div>
+      `;
+    }).join('');
+
+    printWindow.document.write(`
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>SeguraBot_Relatorio_${(profile?.name || 'Cliente').replace(/\s+/g, '_')}</title>
+        <style>
+          @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;800&display=swap');
+          body {
+            font-family: 'Outfit', sans-serif;
+            color: #1e293b;
+            background: #ffffff;
+            margin: 45px;
+            padding: 0;
+            line-height: 1.6;
+          }
+          .header {
+            border-bottom: 2px solid #5e81f4;
+            padding-bottom: 20px;
+            margin-bottom: 30px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+          }
+          .logo {
+            font-size: 26px;
+            font-weight: 800;
+            color: #5e81f4;
+            letter-spacing: -0.8px;
+          }
+          .meta-info {
+            text-align: right;
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 0.8px;
+            color: #64748b;
+            font-weight: 600;
+            line-height: 1.4;
+          }
+          .meta-info p {
+            margin: 3px 0;
+          }
+          .chat-title {
+            font-size: 15px;
+            font-weight: 800;
+            text-transform: uppercase;
+            letter-spacing: 1.2px;
+            color: #0f172a;
+            margin-bottom: 25px;
+            border-left: 3px solid #5e81f4;
+            padding-left: 10px;
+          }
+          .message-container {
+            margin-bottom: 16px;
+            padding: 14px 18px;
+            border-radius: 12px;
+            max-width: 85%;
+            font-size: 13px;
+          }
+          .message-container.user {
+            background-color: #f8fafc;
+            border: 1px solid #e2e8f0;
+            border-left: 4px solid #64748b;
+            margin-right: auto;
+          }
+          .message-container.bot {
+            background-color: #eff6ff;
+            border: 1px solid #dbeafe;
+            border-left: 4px solid #3b82f6;
+            margin-left: auto;
+          }
+          .message-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 6px;
+            font-size: 10px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: #64748b;
+          }
+          .message-header strong {
+            color: #1e293b;
+          }
+          .message-content {
+            font-weight: 400;
+            color: #334155;
+            word-break: break-word;
+          }
+          .footer {
+            margin-top: 60px;
+            border-top: 1px solid #e2e8f0;
+            padding-top: 18px;
+            text-align: center;
+            font-size: 10px;
+            color: #94a3b8;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            font-weight: 600;
+          }
+          @media print {
+            body { margin: 20px; }
+          }
+        </style>
+      </head>
+      <body>
+        <div class="header">
+          <div class="logo">SeguraBot</div>
+          <div class="meta-info">
+            <p><strong>Segurado:</strong> ${profile?.name || 'Cliente Autenticado'}</p>
+            <p><strong>E-mail:</strong> ${profile?.email || '-'}</p>
+            <p><strong>Plano Contratado:</strong> ${profile?.loyaltyTier || 'Demonstração (Sem Contrato)'}</p>
+            <p><strong>Data de Emissão:</strong> ${new Date().toLocaleDateString('pt-BR')} às ${new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</p>
+          </div>
+        </div>
+        
+        <div class="chat-title">Registro Oficial de Atendimento - Área do Cliente</div>
+        
+        <div class="chat-history">
+          ${chatHtml}
+        </div>
+        
+        <div class="footer">
+          SeguraBot Inteligência de Seguros S.A. — Relatório de Atendimento ao Cliente
+        </div>
+        
+        <script>
+          window.onload = function() {
+            setTimeout(function() {
+              window.print();
+              window.close();
+            }, 300);
+          };
+        </script>
+      </body>
+      </html>
+    `);
+    printWindow.document.close();
   };
 
   const handleTrainBotClick = () => {
@@ -745,6 +1085,14 @@ export function Dashboard() {
               </div>
             </div>
           </div>
+          
+          {/* Quick Guide Tour Trigger */}
+          <button
+            onClick={() => setTourActive(true)}
+            className="px-2.5 py-1.5 border border-[#ECECF2] dark:border-slate-800 hover:bg-[#F6F6F6] dark:hover:bg-slate-800/40 text-slate-700 dark:text-slate-200 text-[10px] font-bold rounded-lg transition-all cursor-pointer shadow-sm uppercase tracking-wider"
+          >
+            Tour
+          </button>
         </div>
 
         {/* View Specific Sidebar Controls */}
@@ -842,18 +1190,28 @@ export function Dashboard() {
                   Menu de Gestão (CRM)
                 </p>
                 <div className="space-y-1.5">
-                  {[
-                    { id: 'dados', label: 'Dados do Segurado', icon: User },
-                    { id: 'chamados', label: 'Chamados de Suporte', icon: Sliders },
-                    { id: 'chat', label: 'Chat em Tempo Real', icon: MessageSquare },
-                    { id: 'rag', label: 'Base de Conhecimento', icon: Database },
-                    { id: 'analytics', label: 'Web Analytics', icon: Activity },
-                    { id: 'ajustes_ia', label: 'Ajustes IA', icon: Settings }
-                  ].map((tab) => {
+                  {(() => {
+                    const allTabs = [
+                      { id: 'dados', label: 'Dados do Segurado', icon: User },
+                      { id: 'chamados', label: 'Chamados de Suporte', icon: Sliders },
+                      { id: 'chat', label: 'Chat em Tempo Real', icon: MessageSquare },
+                      { id: 'rag', label: 'Base de Conhecimento', icon: Database },
+                      { id: 'analytics', label: 'Web Analytics', icon: Activity },
+                      { id: 'ajustes_ia', label: 'Ajustes IA', icon: Settings }
+                    ];
+                    return allTabs.filter(tab => {
+                      if (currentRole === 'atendente') {
+                        // Atendente não possui acesso à Base RAG e Ajustes de IA
+                        return tab.id !== 'rag' && tab.id !== 'ajustes_ia';
+                      }
+                      return true;
+                    });
+                  })().map((tab) => {
                     const IconComponent = tab.icon;
                     return (
                       <button
                         key={tab.id}
+                        id={`crm-menu-${tab.id}`}
                         onClick={() => { setCrmTab(tab.id as any); setMobileActiveSubView('content'); }}
                         className={cn(
                           "w-full text-left py-2.5 px-4 rounded-xl text-xs font-bold transition-all duration-200 uppercase tracking-wider cursor-pointer border border-transparent flex items-center gap-2.5",
@@ -968,6 +1326,15 @@ export function Dashboard() {
               
               {/* Provider Badge Status */}
               <div className="flex items-center gap-2">
+                {activeSession && messages.length > 0 && (
+                  <button
+                    onClick={exportChatAsPDF}
+                    className="px-3 py-1.5 bg-[#5E81F4] hover:bg-[#5E81F4]/90 text-white text-[9px] font-black rounded-lg uppercase tracking-wider transition-all cursor-pointer shadow-sm"
+                    title="Exportar PDF do Atendimento"
+                  >
+                    Exportar PDF
+                  </button>
+                )}
                 <span className="text-[10px] font-bold px-2.5 py-1 rounded-full uppercase tracking-wider bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 flex items-center gap-1.5 border border-slate-200/40 dark:border-transparent">
                   <span className={cn("w-1.5 h-1.5 rounded-full", provider === 'gemini' ? "bg-[#5E81F4]" : "bg-[#F4BE5E]")} />
                   <span>{provider === 'gemini' ? 'Gemini Pro Cloud' : 'Ollama Local'}</span>
@@ -978,8 +1345,9 @@ export function Dashboard() {
             {/* Handoff Status Banners */}
             {activeSession && activeSession.status === 'aguardando_humano' && (
               <div className="bg-amber-50 dark:bg-amber-950/20 px-6 py-3 border-b border-amber-100 dark:border-amber-900/30 text-amber-800 dark:text-amber-300 text-xs flex justify-between items-center transition-all select-none shrink-0">
-                <span className="font-medium">
-                  Aguardando um atendente humano iniciar o atendimento...
+                <span className="font-medium flex items-center gap-2">
+                  <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
+                  <span>Fila de suporte: <strong>{queuePosition}º lugar</strong> (Tempo estimado: ~{queueTime} min)</span>
                 </span>
                 <button 
                   onClick={async () => {
@@ -1317,6 +1685,13 @@ export function Dashboard() {
         </div>
       </div>
     )}
+
+    {/* Product Onboarding Tour */}
+    <ProductTour
+      steps={getTourSteps()}
+      active={tourActive}
+      onComplete={() => setTourActive(false)}
+    />
   </div>
 );
 }

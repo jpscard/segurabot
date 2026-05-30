@@ -7,9 +7,11 @@ import { CustomerProfile, SupportTicket, OperationType, Policy, Claim, DocumentR
 import { ChatSession, Message, Role } from '../../domain/Chat';
 import { FirebaseAnalyticsRepository } from '../../infrastructure/FirebaseAnalyticsRepository';
 import { generateCustomerSummaryWithAI, extractDocumentOcrWithAI } from '../../infrastructure/gemini';
-import { onSnapshot, collection, deleteDoc, doc, addDoc, updateDoc, getDocs } from 'firebase/firestore';
+import { onSnapshot, collection, deleteDoc, doc, addDoc, updateDoc, getDocs, collectionGroup } from 'firebase/firestore';
 import { DynamicEmbeddingService } from '../../infrastructure/DynamicEmbeddingService';
 import { uploadRealDataToKnowledgeBase } from '../../utils/seedKnowledgeBase';
+import { speakWithElevenLabs } from '../../infrastructure/ElevenLabsService';
+import { audioManager } from '../../utils/audioManager';
 import {
   User,
   LifeBuoy,
@@ -58,9 +60,62 @@ interface CrmAdminProps {
 
 export function CrmAdmin({ activeTab: propActiveTab, setActiveTab: propSetActiveTab, currentRole = 'cliente', onBack }: CrmAdminProps = {}) {
   const user = auth.currentUser;
-  const { provider, setProvider, geminiApiKey, setGeminiApiKey, ollamaModel, setOllamaModel, geminiModel, setGeminiModel, ollamaBaseUrl, setOllamaBaseUrl } = useSettings();
+  const { 
+    provider, 
+    setProvider, 
+    geminiApiKey, 
+    setGeminiApiKey, 
+    ollamaModel, 
+    setOllamaModel, 
+    geminiModel, 
+    setGeminiModel, 
+    ollamaBaseUrl, 
+    setOllamaBaseUrl,
+    ttsProvider,
+    setTtsProvider,
+    elevenLabsApiKey,
+    setElevenLabsApiKey,
+    elevenLabsVoiceId,
+    setElevenLabsVoiceId,
+    ttsVoiceKeyword,
+    setTtsVoiceKeyword,
+    ttsRate,
+    setTtsRate
+  } = useSettings();
   const [availableModels, setAvailableModels] = useState<string[]>([]);
   const [ollamaOnline, setOllamaOnline] = useState<boolean>(false);
+
+  const testVoice = async () => {
+    audioManager.stopActiveAudio();
+    const sampleText = "Olá, esta é uma demonstração da voz configurada no SeguraBot. A voz que você está ouvindo agora é exatamente a mesma que o cliente final e você ouvirão no chat.";
+
+    if (ttsProvider === 'elevenlabs') {
+      const success = await speakWithElevenLabs(sampleText, elevenLabsApiKey, elevenLabsVoiceId);
+      if (success) return;
+    }
+
+    const utterance = new SpeechSynthesisUtterance(sampleText);
+    utterance.lang = 'pt-BR';
+    utterance.rate = ttsRate;
+
+    const voices = speechSynthesis.getVoices();
+    const ptVoices = voices.filter(v => v.lang.includes('pt-BR') || v.lang.includes('pt_BR'));
+
+    const filterKeyword = ttsVoiceKeyword || 'google';
+    const premiumVoice = ptVoices.find(v => {
+      const nameLower = v.name.toLowerCase();
+      if (filterKeyword === 'all') return false;
+      return nameLower.includes(filterKeyword.toLowerCase()) || nameLower.includes('online') || nameLower.includes('natural');
+    });
+
+    if (premiumVoice) {
+      utterance.voice = premiumVoice;
+    } else if (ptVoices.length > 0) {
+      utterance.voice = ptVoices[0];
+    }
+
+    speechSynthesis.speak(utterance);
+  };
 
   const fetchOllamaModels = async () => {
     try {
@@ -98,6 +153,8 @@ export function CrmAdmin({ activeTab: propActiveTab, setActiveTab: propSetActive
 
   const [profile, setProfile] = useState<CustomerProfile | null>(null);
   const [tickets, setTickets] = useState<SupportTicket[]>([]);
+  const [selectedCustomerProfile, setSelectedCustomerProfile] = useState<CustomerProfile | null>(null);
+  const [selectedCustomerTickets, setSelectedCustomerTickets] = useState<SupportTicket[]>([]);
   const [loading, setLoading] = useState(true);
 
   // Navegação por abas
@@ -291,9 +348,13 @@ export function CrmAdmin({ activeTab: propActiveTab, setActiveTab: propSetActive
       setLoading(false);
     });
 
-    const ticketsUnsub = customerRepo.subscribeToSupportTickets(user.uid, (t) => {
-      setTickets(t);
-    });
+    const ticketsUnsub = currentRole === 'cliente'
+      ? customerRepo.subscribeToSupportTickets(user.uid, (t) => {
+          setTickets(t);
+        })
+      : customerRepo.subscribeToAllSupportTickets((t) => {
+          setTickets(t);
+        });
 
     const sessionsUnsub = chatRepo.listenToAllSessions((data) => {
       // Verificar se alguma sessão mudou para 'aguardando_humano' e ainda não foi notificada
@@ -345,7 +406,7 @@ export function CrmAdmin({ activeTab: propActiveTab, setActiveTab: propSetActive
       ticketsUnsub();
       sessionsUnsub();
     };
-  }, [user]);
+  }, [user, currentRole]);
 
   // Escuta mensagens do chat em tempo real selecionado
   useEffect(() => {
@@ -364,6 +425,28 @@ export function CrmAdmin({ activeTab: propActiveTab, setActiveTab: propSetActive
       msgsUnsub();
     };
   }, [user, selectedSession]);
+
+  // Escuta perfil e chamados do cliente selecionado no chat em tempo real
+  useEffect(() => {
+    if (!selectedSession) {
+      setSelectedCustomerProfile(null);
+      setSelectedCustomerTickets([]);
+      return;
+    }
+
+    const unsubProfile = customerRepo.subscribeToCustomerProfile(selectedSession.userId, (data) => {
+      setSelectedCustomerProfile(data);
+    });
+
+    const unsubTickets = customerRepo.subscribeToSupportTickets(selectedSession.userId, (data) => {
+      setSelectedCustomerTickets(data);
+    });
+
+    return () => {
+      unsubProfile();
+      unsubTickets();
+    };
+  }, [selectedSession]);
 
   // Escuta a base de conhecimento (RAG) do Firestore em tempo real
   useEffect(() => {
@@ -489,6 +572,53 @@ export function CrmAdmin({ activeTab: propActiveTab, setActiveTab: propSetActive
       setKbLoading(false);
       setSourcesLoading(false);
     }
+  };
+
+  const resetAllInteractions = async () => {
+    try {
+      showNotification("Limpando interações e dados...", "info");
+      
+      // 1. Limpar Chamados de Suporte
+      const ticketsSnap = await getDocs(collection(db, 'support_tickets'));
+      for (const ticketDoc of ticketsSnap.docs) {
+        await deleteDoc(ticketDoc.ref);
+      }
+      
+      // 2. Limpar Históricos de Chats e suas subcoleções de mensagens
+      const sessionsSnap = await getDocs(collectionGroup(db, 'chat_sessions'));
+      for (const sessionDoc of sessionsSnap.docs) {
+        const messagesRef = collection(db, `${sessionDoc.ref.path}/messages`);
+        const messagesSnap = await getDocs(messagesRef);
+        for (const msgDoc of messagesSnap.docs) {
+          await deleteDoc(msgDoc.ref);
+        }
+        await deleteDoc(sessionDoc.ref);
+      }
+      
+      // 3. Limpar Eventos de Analytics
+      const analyticsSnap = await getDocs(collection(db, 'analytics'));
+      for (const eventDoc of analyticsSnap.docs) {
+        await deleteDoc(eventDoc.ref);
+      }
+      
+      showNotification("Todas as interações, chats, chamados e estatísticas foram apagados com sucesso!", "success");
+    } catch (err: any) {
+      console.error("Erro ao resetar banco:", err);
+      showNotification(`Erro ao resetar: ${err.message || err}`, "error");
+    }
+  };
+
+  const handleResetConfirm = () => {
+    setCustomConfirm({
+      show: true,
+      title: "Confirmar Reset Total",
+      message: "ATENÇÃO! Esta ação é irreversível. Todos os chamados de suporte, históricos de bate-papo, mensagens e estatísticas de analytics serão apagados permanentemente de toda a base de dados. Deseja continuar?",
+      danger: true,
+      onConfirm: async () => {
+        setCustomConfirm(prev => ({ ...prev, show: false }));
+        await resetAllInteractions();
+      }
+    });
   };
 
   const handleAddManualKbEntry = async (e: React.FormEvent) => {
@@ -867,7 +997,7 @@ export function CrmAdmin({ activeTab: propActiveTab, setActiveTab: propSetActive
       await updateDoc(ticketRef, updates);
 
       // Envia uma notificação automatizada no chat ativo se houver
-      const ticket = tickets.find(t => t.id === id);
+      const ticket = tickets.find(t => t.id === id) || selectedCustomerTickets.find(t => t.id === id);
       if (ticket && user) {
         const activeSessionForUser = sessions.find(s => s.userId === ticket.userId);
         if (activeSessionForUser) {
@@ -887,7 +1017,7 @@ export function CrmAdmin({ activeTab: propActiveTab, setActiveTab: propSetActive
             timestamp: new Date().toISOString(),
             senderName: "Sistema"
           };
-          await chatRepo.saveMessage(user.uid, activeSessionForUser.id, sysMsg);
+          await chatRepo.saveMessage(activeSessionForUser.userId, activeSessionForUser.id, sysMsg);
         }
       }
     } catch (error) {
@@ -915,7 +1045,7 @@ export function CrmAdmin({ activeTab: propActiveTab, setActiveTab: propSetActive
           timestamp: new Date().toISOString(),
           senderName: "Sistema"
         };
-        await chatRepo.saveMessage(user.uid, activeSessionForUser.id, sysMsg);
+        await chatRepo.saveMessage(activeSessionForUser.userId, activeSessionForUser.id, sysMsg);
       }
       
       setSidebarNewTicketSubject('');
@@ -1070,7 +1200,7 @@ export function CrmAdmin({ activeTab: propActiveTab, setActiveTab: propSetActive
     return (
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 flex-grow flex-1 h-full min-h-0 bg-white dark:bg-slate-900 rounded-2xl border border-[#ECECF2] dark:border-slate-800 overflow-hidden shadow-sm animate-fadeIn">
         {/* Painel Esquerdo: Lista de Conversas (col-span-4) */}
-        <div className="lg:col-span-4 border-r border-[#ECECF2] dark:border-slate-800 flex flex-col h-full min-h-0 bg-slate-50/50 dark:bg-slate-950/20 select-none">
+        <div id="crm-sidebar-sessions" className="lg:col-span-4 border-r border-[#ECECF2] dark:border-slate-800 flex flex-col h-full min-h-0 bg-slate-50/50 dark:bg-slate-950/20 select-none">
           <div className="p-4 border-b border-[#ECECF2] dark:border-slate-800 space-y-3 shrink-0">
             <div>
               <h3 className="text-xs font-bold text-slate-800 dark:text-slate-200 uppercase tracking-wider">
@@ -1192,7 +1322,7 @@ export function CrmAdmin({ activeTab: propActiveTab, setActiveTab: propSetActive
         {selectedSession ? (
           <>
             {/* Coluna Central: Chat (col-span-5) */}
-            <div className="lg:col-span-5 flex flex-col h-full min-h-0 bg-white dark:bg-slate-900 border-r border-[#ECECF2] dark:border-slate-800">
+            <div id="crm-chat-history" className="lg:col-span-5 flex flex-col h-full min-h-0 bg-white dark:bg-slate-900 border-r border-[#ECECF2] dark:border-slate-800">
               {/* Header do Chat Selecionado */}
               <div className="p-4 border-b border-[#ECECF2] dark:border-slate-800 flex justify-between items-center bg-slate-50/20 shrink-0">
                 <div className="min-w-0">
@@ -1329,7 +1459,7 @@ export function CrmAdmin({ activeTab: propActiveTab, setActiveTab: propSetActive
             </div>
 
             {/* Coluna da Direita: CRM & Tickets do Cliente (col-span-3) */}
-            <div className="lg:col-span-3 flex flex-col h-full min-h-0 bg-[#F6F6F6]/30 dark:bg-slate-950/10 overflow-y-auto select-none p-4 divide-y divide-[#ECECF2]/60 dark:divide-slate-800/60 scrollbar-thin space-y-5">
+            <div id="crm-customer-profile" className="lg:col-span-3 flex flex-col h-full min-h-0 bg-[#F6F6F6]/30 dark:bg-slate-950/10 overflow-y-auto select-none p-4 divide-y divide-[#ECECF2]/60 dark:divide-slate-800/60 scrollbar-thin space-y-5">
               
               {/* Seção 1: Perfil do Cliente */}
               <div className="pb-4 space-y-3">
@@ -1338,43 +1468,43 @@ export function CrmAdmin({ activeTab: propActiveTab, setActiveTab: propSetActive
                 </h4>
                 <div className="space-y-1.5">
                   <p className="text-xs font-bold text-slate-800 dark:text-slate-200">
-                    {profile?.name || 'Cliente Segura'}
+                    {selectedCustomerProfile?.name || 'Cliente Segura'}
                   </p>
                   <p className="text-[10px] text-slate-500 dark:text-slate-400 font-normal">
-                    {profile?.email || 'cliente@segura.com'}
+                    {selectedCustomerProfile?.email || 'cliente@segura.com'}
                   </p>
-                  {profile?.phone && (
+                  {selectedCustomerProfile?.phone && (
                     <p className="text-[10px] text-slate-500 dark:text-slate-400 font-normal">
-                      Tel: {profile.phone}
+                      Tel: {selectedCustomerProfile.phone}
                     </p>
                   )}
                 </div>
                 
                 <div className="flex flex-wrap gap-1.5 pt-1">
                   {/* Loyalty Tier Badge */}
-                  {profile?.loyaltyTier && (
+                  {selectedCustomerProfile?.loyaltyTier && (
                     <span className={`text-[8px] font-bold px-2 py-0.5 rounded uppercase tracking-wider ${
-                      profile.loyaltyTier === 'Silver' ? 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300' :
-                      profile.loyaltyTier === 'Gold' || profile.loyaltyTier === 'Ouro' ? 'bg-amber-100/70 text-amber-700 dark:bg-amber-950/40 dark:text-amber-400 border border-amber-500/20' :
-                      profile.loyaltyTier === 'Black' || profile.loyaltyTier === 'Platina' ? 'bg-blue-100 text-[#5E81F4] dark:bg-blue-950/40 dark:text-blue-400 border border-blue-500/20 shadow-sm' :
-                      profile.loyaltyTier === 'Bronze' ? 'bg-orange-100 text-orange-700 dark:bg-orange-950/40 dark:text-orange-400 border border-orange-500/10' :
+                      selectedCustomerProfile.loyaltyTier === 'Silver' ? 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300' :
+                      selectedCustomerProfile.loyaltyTier === 'Gold' || selectedCustomerProfile.loyaltyTier === 'Ouro' ? 'bg-amber-100/70 text-amber-700 dark:bg-amber-950/40 dark:text-amber-400 border border-amber-500/20' :
+                      selectedCustomerProfile.loyaltyTier === 'Black' || selectedCustomerProfile.loyaltyTier === 'Platina' ? 'bg-blue-100 text-[#5E81F4] dark:bg-blue-950/40 dark:text-blue-400 border border-blue-500/20 shadow-sm' :
+                      selectedCustomerProfile.loyaltyTier === 'Bronze' ? 'bg-orange-100 text-orange-700 dark:bg-orange-950/40 dark:text-orange-400 border border-orange-500/10' :
                       'bg-blue-100 text-[#5E81F4] dark:bg-blue-950/40 dark:text-[#5E81F4]'
                     }`}>
-                      {profile.loyaltyTier}
+                      {selectedCustomerProfile.loyaltyTier}
                     </span>
                   )}
                   {/* Risk Score Badge */}
                   <span className={`text-[8px] font-bold px-2 py-0.5 rounded uppercase tracking-wider ${
-                    (profile?.riskScore || 0) > 60 ? 'bg-rose-50 dark:bg-rose-950/20 text-rose-600 dark:text-rose-400' :
-                    (profile?.riskScore || 0) > 30 ? 'bg-amber-50 dark:bg-amber-950/20 text-amber-600 dark:text-amber-400' :
+                    (selectedCustomerProfile?.riskScore || 0) > 60 ? 'bg-rose-50 dark:bg-rose-950/20 text-rose-600 dark:text-rose-400' :
+                    (selectedCustomerProfile?.riskScore || 0) > 30 ? 'bg-amber-50 dark:bg-amber-950/20 text-amber-600 dark:text-amber-400' :
                     'bg-emerald-50 dark:bg-emerald-950/20 text-emerald-600 dark:text-emerald-400'
                   }`}>
-                    Risco: {profile?.riskScore || 0}%
+                    Risco: {selectedCustomerProfile?.riskScore || 0}%
                   </span>
                   
-                  {profile?.lifeStage && (
+                  {selectedCustomerProfile?.lifeStage && (
                     <span className="text-[8px] font-bold px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 uppercase tracking-wider">
-                      {profile.lifeStage}
+                      {selectedCustomerProfile.lifeStage}
                     </span>
                   )}
                 </div>
@@ -1387,7 +1517,7 @@ export function CrmAdmin({ activeTab: propActiveTab, setActiveTab: propSetActive
                 </h4>
                 <div className="p-3 bg-white dark:bg-slate-900 border border-[#ECECF2] dark:border-slate-800 rounded-xl max-h-[110px] overflow-y-auto scrollbar-thin">
                   <p className="text-[9px] leading-relaxed italic text-slate-600 dark:text-slate-400 font-medium">
-                    {profile?.aiSummary || "Nenhum resumo gerado ainda. Use a aba 'Dados e Contratos' para compilar o resumo."}
+                    {selectedCustomerProfile?.aiSummary || "Nenhum resumo gerado ainda. Use a aba 'Dados e Contratos' para compilar o resumo."}
                   </p>
                 </div>
               </div>
@@ -1396,13 +1526,13 @@ export function CrmAdmin({ activeTab: propActiveTab, setActiveTab: propSetActive
               <div className="py-4 flex-1 flex flex-col min-h-0 space-y-3">
                 <div className="flex justify-between items-center">
                   <h4 className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest">
-                    Chamados ({tickets.length})
+                    Chamados ({selectedCustomerTickets.length})
                   </h4>
                 </div>
 
                 {/* Lista de Tickets do Usuário */}
                 <div className="flex-1 overflow-y-auto space-y-2.5 max-h-[180px] scrollbar-thin pr-1">
-                  {tickets.map(t => {
+                  {selectedCustomerTickets.map(t => {
                     const isResolving = resolvingTicketId === t.id;
                     return (
                       <div key={t.id} className="p-2.5 bg-white dark:bg-slate-900 border border-[#ECECF2] dark:border-slate-800 rounded-xl space-y-2 text-[10px] font-normal">
@@ -1481,7 +1611,7 @@ export function CrmAdmin({ activeTab: propActiveTab, setActiveTab: propSetActive
                     );
                   })}
 
-                  {tickets.length === 0 && (
+                  {selectedCustomerTickets.length === 0 && (
                     <p className="text-[9px] text-[#8181A5] dark:text-slate-500 italic py-2 text-center">Nenhum chamado aberto.</p>
                   )}
                 </div>
@@ -2513,8 +2643,10 @@ export function CrmAdmin({ activeTab: propActiveTab, setActiveTab: propSetActive
                 onChange={(e) => setGeminiModel(e.target.value)}
                 className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-950 border border-[#ECECF2] dark:border-slate-800 rounded-xl text-xs outline-none focus:border-[#5E81F4] dark:focus:border-[#5E81F4]/40 text-slate-700 dark:text-slate-200 font-sans font-bold cursor-pointer transition-all"
               >
-                <option value="gemini-1.5-pro">Gemini 1.5 Pro (Altíssima Precisão)</option>
-                <option value="gemini-1.5-flash">Gemini 1.5 Flash (Super Rápido & Leve)</option>
+                <option value="gemini-2.5-flash">Gemini 2.5 Flash (Super Rápido, Preciso & Econômico)</option>
+                <option value="gemini-2.5-pro">Gemini 2.5 Pro (Raciocínio & Resolução Complexa)</option>
+                <option value="gemini-1.5-pro">Gemini 1.5 Pro (Alta Precisão Multimodal)</option>
+                <option value="gemini-1.5-flash">Gemini 1.5 Flash (Rápido & Leve - Legado)</option>
               </select>
             </div>
           </div>
@@ -2595,6 +2727,180 @@ export function CrmAdmin({ activeTab: propActiveTab, setActiveTab: propSetActive
             )}
           </div>
         )}
+
+
+        {/* Ajustes de Voz (TTS) Section */}
+        <div className="border-t border-[#ECECF2] dark:border-slate-850 pt-6 space-y-6">
+          <div>
+            <h4 className="text-xs font-bold text-slate-800 dark:text-slate-200 uppercase tracking-wider">
+              Ajustes do Assistente de Voz (TTS)
+            </h4>
+            <p className="text-[11px] text-[#8181A5] mt-1 font-medium leading-normal">
+              Gerencie o provedor de Text-to-Speech e a entonação da voz para as respostas faladas do SeguraBot.
+            </p>
+          </div>
+
+          {/* TTS Provider Choice using styled pills */}
+          <div className="space-y-3">
+            <p className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest">
+              Provedor de Voz Ativo
+            </p>
+            <div className="flex gap-3">
+              <button
+                type="button"
+                onClick={() => setTtsProvider('native')}
+                className={`flex-1 py-3.5 px-4 text-xs font-bold rounded-xl uppercase tracking-wider transition-all duration-200 border cursor-pointer ${
+                  ttsProvider === 'native'
+                    ? 'bg-[#5E81F4] text-white border-[#5E81F4] shadow-sm shadow-[#5E81F4]/10'
+                    : 'bg-slate-50 dark:bg-slate-800/40 text-slate-600 dark:text-slate-400 border-transparent hover:bg-slate-100 dark:hover:bg-slate-800'
+                }`}
+              >
+                Voz Nativa do Navegador (Grátis)
+              </button>
+              <button
+                type="button"
+                onClick={() => setTtsProvider('elevenlabs')}
+                className={`flex-1 py-3.5 px-4 text-xs font-bold rounded-xl uppercase tracking-wider transition-all duration-200 border cursor-pointer ${
+                  ttsProvider === 'elevenlabs'
+                    ? 'bg-[#5E81F4] text-white border-[#5E81F4] shadow-sm shadow-[#5E81F4]/10'
+                    : 'bg-slate-50 dark:bg-slate-800/40 text-slate-600 dark:text-slate-400 border-transparent hover:bg-slate-100 dark:hover:bg-slate-800'
+                }`}
+              >
+                ElevenLabs (Premium)
+              </button>
+            </div>
+          </div>
+
+          {/* Native configuration options */}
+          {ttsProvider === 'native' && (
+            <div className="space-y-4 animate-fadeIn">
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest block">
+                  Prioridade de Voz do Navegador
+                </label>
+                <select
+                  value={ttsVoiceKeyword}
+                  onChange={(e) => setTtsVoiceKeyword(e.target.value)}
+                  className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-950 border border-[#ECECF2] dark:border-slate-800 rounded-xl text-xs outline-none focus:border-[#5E81F4] dark:focus:border-[#5E81F4]/40 text-slate-700 dark:text-slate-200 font-sans font-bold cursor-pointer transition-all"
+                >
+                  <option value="google">Voz Google (Mais Suave/Chrome)</option>
+                  <option value="online">Vozes Online (Natural/Edge)</option>
+                  <option value="natural">Vozes Naturais (Premium)</option>
+                  <option value="all">Padrão do Sistema Operacional</option>
+                </select>
+                <span className="text-[10px] text-slate-400 dark:text-slate-500 block leading-relaxed font-normal">
+                  Filtro inteligente que busca automaticamente as melhores vozes instaladas no dispositivo do visitante.
+                </span>
+              </div>
+
+              <div className="space-y-2 pt-2">
+                <div className="flex justify-between items-center">
+                  <label className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest block">
+                    Velocidade de Leitura (TTS)
+                  </label>
+                  <span className="text-[10px] font-bold text-[#5E81F4] bg-[#5E81F4]/10 px-2 py-0.5 rounded-md font-mono">
+                    {ttsRate.toFixed(2)}x
+                  </span>
+                </div>
+                <input
+                  type="range"
+                  min="0.5"
+                  max="2.0"
+                  step="0.05"
+                  value={ttsRate}
+                  onChange={(e) => setTtsRate(parseFloat(e.target.value))}
+                  className="w-full h-1.5 bg-slate-200 dark:bg-slate-800 rounded-lg appearance-none cursor-pointer accent-[#5E81F4]"
+                />
+                <div className="flex justify-between text-[9px] font-bold text-slate-400 dark:text-slate-500 font-mono">
+                  <span>0.50x (Lento)</span>
+                  <span>1.05x (Recomendado)</span>
+                  <span>2.00x (Rápido)</span>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ElevenLabs configuration options */}
+          {ttsProvider === 'elevenlabs' && (
+            <div className="space-y-4 animate-fadeIn">
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest block">
+                  Chave de API ElevenLabs
+                </label>
+                <input
+                  type="password"
+                  value={elevenLabsApiKey}
+                  onChange={(e) => setElevenLabsApiKey(e.target.value)}
+                  placeholder="Inserir chave ElevenLabs (sk_...)"
+                  className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-950 border border-[#ECECF2] dark:border-slate-800 rounded-xl text-xs outline-none focus:border-[#5E81F4] dark:focus:border-[#5E81F4]/40 text-slate-700 dark:text-slate-200 placeholder:text-[#8181A5]/40 transition-all font-mono"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest block">
+                  Voice ID Selecionado
+                </label>
+                <input
+                  type="text"
+                  value={elevenLabsVoiceId}
+                  onChange={(e) => setElevenLabsVoiceId(e.target.value)}
+                  placeholder="Ex: 21m00Tcm4TlvDq8ikWAM"
+                  className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-950 border border-[#ECECF2] dark:border-slate-800 rounded-xl text-xs outline-none focus:border-[#5E81F4] dark:focus:border-[#5E81F4]/40 text-slate-700 dark:text-slate-200 placeholder:text-[#8181A5]/40 transition-all font-mono"
+                />
+                <span className="text-[10px] text-slate-400 dark:text-slate-500 block leading-relaxed font-normal">
+                  Insira o ID de qualquer voz personalizada ou pré-configurada na sua conta ElevenLabs.
+                </span>
+              </div>
+            </div>
+          )}
+
+          {/* Action Button: Salvar Alterações */}
+          <div className="pt-4 border-t border-[#ECECF2]/50 dark:border-slate-850/50">
+            <button
+              type="button"
+              onClick={() => {
+                showNotification("Configurações de IA salvas com sucesso!", "success");
+              }}
+              className="w-full py-3.5 px-4 bg-[#5E81F4] hover:bg-[#5E81F4]/90 text-white border border-transparent text-xs font-bold rounded-xl uppercase tracking-wider transition-all duration-200 cursor-pointer shadow-sm shadow-[#5E81F4]/10"
+            >
+              Salvar Alterações de IA
+            </button>
+          </div>
+
+          {/* Test Voice Button */}
+          <div className="pt-4 border-t border-[#ECECF2]/50 dark:border-slate-850/50">
+            <button
+              type="button"
+              onClick={testVoice}
+              className="w-full py-3.5 px-4 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700/80 text-slate-800 dark:text-slate-200 border border-slate-200 dark:border-slate-700 text-xs font-bold rounded-xl uppercase tracking-wider transition-all duration-200 cursor-pointer"
+            >
+              Testar Voz Selecionada
+            </button>
+            <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-2 text-center font-normal leading-normal">
+              Esta é exatamente a mesma voz que o visitante ouvirá no chat e a que iniciará a conversação.
+            </p>
+          </div>
+
+          {/* Danger Zone / Zona de Perigo */}
+          <div className="pt-6 border-t border-rose-100 dark:border-rose-950/20 space-y-4">
+            <div className="space-y-1 text-left">
+              <h3 className="text-xs font-bold text-rose-500 uppercase tracking-widest">
+                Zona de Perigo
+              </h3>
+              <p className="text-[10px] text-slate-400 dark:text-slate-500 leading-normal font-normal">
+                Ações críticas de administração do sistema. Apague de forma permanente os históricos de chats, mensagens, chamados de suporte e dados estatísticos.
+              </p>
+            </div>
+            
+            <button
+              type="button"
+              onClick={handleResetConfirm}
+              className="w-full py-3.5 px-4 bg-white dark:bg-slate-900 hover:bg-rose-50 dark:hover:bg-rose-950/10 text-rose-500 border border-rose-200 dark:border-rose-900/40 text-xs font-bold rounded-xl uppercase tracking-wider transition-all duration-200 cursor-pointer shadow-sm shadow-rose-500/5 hover:border-rose-300"
+            >
+              Zerar Todas as Interações e Históricos
+            </button>
+          </div>
+        </div>
       </div>
     );
   };
@@ -3359,14 +3665,14 @@ export function CrmAdmin({ activeTab: propActiveTab, setActiveTab: propSetActive
               {/* Tab 3: Chat em Tempo Real */}
               {activeTab === 'chat' && renderLiveChatTab()}
 
-              {/* Tab 4: Base de Conhecimento (RAG) */}
-              {activeTab === 'rag' && renderRagTab()}
+              {/* Tab 4: Base de Conhecimento (RAG) - Apenas Admin */}
+              {activeTab === 'rag' && currentRole === 'admin' && renderRagTab()}
 
               {/* Tab 5: Analytics & Funil */}
               {activeTab === 'analytics' && renderAnalyticsTab()}
 
-              {/* Tab 6: Ajustes IA */}
-              {activeTab === 'ajustes_ia' && renderAjustesIaTab()}
+              {/* Tab 6: Ajustes IA - Apenas Admin */}
+              {activeTab === 'ajustes_ia' && currentRole === 'admin' && renderAjustesIaTab()}
             </div>
           </div>
         </div>

@@ -34,5 +34,35 @@
     "question": "O plano cobrirá internação em quarto particular ou enfermaria?",
     "answer": "Seu plano Executivo de saúde garante cobertura integral para internações em quarto particular (apartamento) com direito a um acompanhante durante todo o período de hospitalização sem custos adicionais de diárias.",
     "source": "Manual de Hospitalização SeguraBot Saúde"
+  },
+  {
+    "category": "Doenças Preexistentes",
+    "question": "O plano cobre doenças preexistentes?",
+    "answer": "Sim, de acordo com as diretrizes da ANS, o plano Executivo SeguraBot Saúde cobre o tratamento de Doenças ou Lesões Preexistentes (DLP). Há um período de CPT (Cobertura Parcial Temporária) de até 24 meses a partir da adesão para procedimentos de alta complexidade, leitos de CTI/UTI e cirurgias relacionados exclusivamente à doença declarada. Consultas simples e procedimentos de rotina seguem as carências comuns sem restrições.",
+    "source": "Regulamento de DLP SeguraBot Saúde"
+  },
+  {
+    "category": "Carência Geral",
+    "question": "Qual é o prazo de carência do plano?",
+    "answer": "As carências padrão do plano Executivo SeguraBot Saúde são: 24 horas para urgências e emergências médicas; 30 dias para consultas e exames laboratoriais simples; 180 dias para exames de alta complexidade, fisioterapia e internações clínicas/cirúrgicas; e 300 dias para parto a termo. Isenções de carência podem ocorrer em campanhas especiais ou na portabilidade de planos anteriores.",
+    "source": "Tabela Oficial de Carências SeguraBot Saúde"
+  },
+  {
+    "category": "Internações e Cirurgias",
+    "question": "O plano cobre internações e cirurgias?",
+    "answer": "Sim, o plano garante cobertura hospitalar integral com obstetrícia. Isso inclui internações clínicas e cirúrgicas sem limite de dias, em quarto particular (apartamento) com direito a acompanhante durante todo o período de hospitalização, além de cirurgias eletivas (agendadas) e cirurgias de urgência em todos os hospitais credenciados, respeitados os prazos regulamentares de carência.",
+    "source": "Termos de Cobertura Hospitalar"
+  },
+  {
+    "category": "Rede Credenciada",
+    "question": "Quais hospitais fazem parte da rede credenciada?",
+    "answer": "A rede credenciada do plano Executivo SeguraBot Saúde conta com hospitais de excelência nacional. Em São Paulo, inclui o Hospital Sírio-Libanês, Hospital Israelita Albert Einstein e Hospital Oswaldo Cruz. No Rio de Janeiro, conta com o Hospital Copa Star e Hospital Samaritano. A rede completa de clínicas, laboratórios (como Fleury e Delboni) e prontos-socorros locais pode ser consultada a qualquer momento diretamente no seu painel do cliente ou pelo aplicativo.",
+    "source": "Guia de Hospitais e Rede Credenciada"
+  },
+  {
+    "category": "Reajuste do Plano",
+    "question": "Como funciona o reajuste do plano?",
+    "answer": "O reajuste do plano ocorre em duas situações regulamentadas: 1) Reajuste Anual, aplicado na data de aniversário do contrato com base no índice autorizado pela ANS (para planos individuais/familiares) ou sinistralidade acordada (para planos coletivos); e 2) Reajuste por Faixa Etária, que ocorre quando o beneficiário muda de faixa de idade, conforme as 10 faixas oficiais autorizadas pela legislação vigente da ANS.",
+    "source": "Contrato de Adesão e Regulamento ANS"
   }
 ]

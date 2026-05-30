@@ -3,8 +3,8 @@
 O **SeguraBot** é uma plataforma de assistente virtual baseada em Inteligência Artificial, construída com foco em segurança, manutenibilidade e um design premium. A aplicação utiliza uma abordagem de IA híbrida (integrando o Google Gemini e suporte opcional para modelos locais como Ollama) aliada a um banco de dados em tempo real (Firebase) para a gestão do histórico e autenticação.
 
 ## Equipe e Informações do Projeto
-* **Membros da Equipe:** João Paulo da Silva Cardoso e Leonardo Alves Pereira.
-* **Repositório Oficial:** [GitHub - Segurabot](https://github.com/jpscard/segurabot)
+* **Membros da Equipe:** Felipe Rafael dos Santos Barbosa, João Paulo da Silva Cardoso e Victor Amazonas Viegas Ferreira.
+* **Repositório Oficial:** [GitHub - uci_ai](https://github.com/jpscard/uci_ai/tree/main)
 * **Link Oficial:** [Segurabot](https://segurabot.web.app/)
 
 ## Objetivos do Produto
@@ -29,12 +29,12 @@ Página inicial do **SeguraBot** apresentando os recursos, resultados operaciona
 ### 2. Painel de Chat do Cliente (Dashboard)
 Uma interface de chat moderna, limpa e focada em legibilidade absoluta, onde o segurado pode interagir com o assistente de IA, analisar apólices e tirar dúvidas de seguros em tempo real.
 
-![SeguraBot Chat Dashboard](assets/real_dashboard.png)
+![SeguraBot Chat Dashboard](assets/chat_widget_premium_mockup.png)
 
 ### 3. Painel Administrativo de CRM (Simulador Omnichannel)
 Painel de controle robusto para corretores de seguros gerenciarem os dados de cadastro dos segurados, contratos ativos (apólices), histórico de sinistros, resumos omnichannel criados por IA e treinar a base de conhecimento (RAG).
 
-![SeguraBot CRM Admin](assets/real_crm.png)
+![SeguraBot CRM Admin](assets/crm_dashboard_premium_mockup.png)
 
 ## Engenharia de Software e Arquitetura
 

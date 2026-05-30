@@ -22,19 +22,31 @@ O **SeguraBot** é uma plataforma de assistente virtual baseada em Inteligência
 Abaixo estão capturas de tela reais da nossa aplicação em pleno funcionamento, desenvolvida sob a premissa de minimalismo absoluto (sem emojis ou ícones nos elementos visuais) e navegação baseada em botões estilizados:
 
 ### 1. Página de Destino (Landing Page)
-Página inicial do **SeguraBot** apresentando os recursos, resultados operacionais da plataforma, arquitetura de confiança zero e informações sobre a equipe de desenvolvedores.
+Página inicial apresentando os recursos, resultados operacionais da plataforma, segurança de dados e a nossa equipe de desenvolvedores.
 
-![SeguraBot Landing Page](assets/real_landing.png)
+* **Modo Escuro (Padrão Premium):**
+  ![SeguraBot Landing Page - Dark](assets/real_landing.png)
 
-### 2. Painel de Chat do Cliente (Dashboard)
-Uma interface de chat moderna, limpa e focada em legibilidade absoluta, onde o segurado pode interagir com o assistente de IA, analisar apólices e tirar dúvidas de seguros em tempo real.
+* **Modo Claro (Clean Visual):**
+  ![SeguraBot Landing Page - Light](assets/real_landing_light.png)
 
-![SeguraBot Chat Dashboard](assets/chat_widget_premium_mockup.png)
+### 2. Painel do Cliente (Dashboard de Chat)
+Uma interface de chat moderna e limpa, focada em legibilidade absoluta, onde o cliente/visitante pode interagir com a inteligência artificial ou falar com o suporte.
 
-### 3. Painel Administrativo de CRM (Simulador Omnichannel)
-Painel de controle robusto para corretores de seguros gerenciarem os dados de cadastro dos segurados, contratos ativos (apólices), histórico de sinistros, resumos omnichannel criados por IA e treinar a base de conhecimento (RAG).
+* **Dashboard de Chat Principal:**
+  ![SeguraBot Dashboard Chat](assets/real_dashboard.png)
 
-![SeguraBot CRM Admin](assets/crm_dashboard_premium_mockup.png)
+* **Detalhamento do ChatWidget:**
+  ![SeguraBot Chat Widget](assets/chat_widget_premium_mockup.png)
+
+### 3. Painel do Administrador & CRM Omnichannel
+Painel de controle central para a gestão de clientes, contratos, sinistros, acompanhamento de chats ativos em tempo real e treinamento semântico do assistente virtual.
+
+* **Painel Omnichannel (CRM Admin):**
+  ![SeguraBot CRM Admin](assets/real_crm.png)
+
+* **Base de Conhecimento e Treinamento (RAG):**
+  ![SeguraBot RAG Training](assets/real_rag.png)
 
 ## Engenharia de Software e Arquitetura
 

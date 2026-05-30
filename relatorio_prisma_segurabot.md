@@ -2,9 +2,8 @@
 ### **Mapeamento Metodológico no Formato PRISMA (Preferred Reporting Items for Systematic Reviews and Meta-Analyses)**
 
 > **Membros do Grupo de Pesquisa:**
-> * Felipe Rafael dos Santos Barbosa
 > * João Paulo da Silva Cardoso
-> * Victor Amazonas Viegas Ferreira
+> * Leonardo Alves Pereira
 >
 > **GitHub Repository:** [jpscard/uci_ai (Main Branch)](https://github.com/jpscard/uci_ai/tree/main)
 > **Produção Live:** [segurabot.web.app](https://segurabot.web.app)

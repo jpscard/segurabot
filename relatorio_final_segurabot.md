@@ -3,7 +3,7 @@
 
 ---
 
-**Autores:** João Paulo da Silva Cardoso, Leonardo Alves Pereira, Felipe Rafael dos Santos Barbosa, Victor Amazonas Viegas Ferreira  
+**Autores:** João Paulo da Silva Cardoso, Leonardo Alves Pereira  
 **Curso:** Insurminds – Inteligência Artificial Aplicada a Seguros (Turma 1 - 2026)  
 **Realização:** I2A2 - LatinRe  
 **Data:** Maio de 2026  

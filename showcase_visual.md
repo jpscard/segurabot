@@ -24,7 +24,7 @@ Aproveite este carrossel para folhear as principais telas e dinâmicas do Segura
 
 ## 🛠️ Guia de Roteiro para Gravação de Tela (Apresentação Perfeita)
 
-Caso precise gerar um vídeo profissional para o trabalho acadêmico dos membros do grupo (**Felipe, João e Victor**), recomendamos utilizar o **OBS Studio** ou o gravador nativo do Windows (**Win + Alt + R**). Siga o roteiro de **3 minutos** abaixo:
+Caso precise gerar um vídeo profissional para o trabalho acadêmico dos membros do grupo (**João e Leonardo**), recomendamos utilizar o **OBS Studio** ou o gravador nativo do Windows (**Win + Alt + R**). Siga o roteiro de **3 minutos** abaixo:
 
 ### Parte 1: A Experiência do Segurado (1 Minuto)
 1. Abra a página inicial no navegador: [https://segurabot.web.app](https://segurabot.web.app).

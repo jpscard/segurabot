@@ -39,6 +39,9 @@ Uma interface de chat moderna e limpa, focada em legibilidade absoluta, onde o c
 * **Detalhamento do ChatWidget:**
   ![SeguraBot Chat Widget](assets/chat_widget_premium_mockup.png)
 
+* **Tela de Chat Interno:**
+  ![SeguraBot Chat Interno](assets/chat_interno_mockup.png)
+
 ### 3. Painel do Administrador & CRM Omnichannel
 Painel de controle central para a gestão de clientes, contratos, sinistros, acompanhamento de chats ativos em tempo real e treinamento semântico do assistente virtual.
 

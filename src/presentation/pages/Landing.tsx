@@ -824,7 +824,7 @@ export function Landing() {
           </a>
           
           <a 
-            href="https://github.com/jpscard/uci_ai/tree/main" 
+            href="https://github.com/jpscard/segurabot" 
             target="_blank" 
             rel="noopener noreferrer" 
             className="flex items-center justify-between p-6 bg-white dark:bg-slate-900 rounded-xl border border-[#ECECF2] dark:border-slate-800 card-hover hover:border-[#5E81F4]/40 dark:hover:border-[#5E81F4]/40 transition-all group"

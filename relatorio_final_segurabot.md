@@ -7,7 +7,7 @@
 **Curso:** Insurminds – Inteligência Artificial Aplicada a Seguros (Turma 1 - 2026)  
 **Realização:** I2A2 - LatinRe  
 **Data:** Maio de 2026  
-**Repositório Oficial:** [github.com/jpscard/uci_ai](https://github.com/jpscard/uci_ai/tree/main)  
+**Repositório Oficial:** [github.com/jpscard/segurabot](https://github.com/jpscard/segurabot)  
 **URL de Produção Live:** [segurabot.web.app](https://segurabot.web.app)  
 
 ---

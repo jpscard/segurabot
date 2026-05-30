@@ -6,7 +6,7 @@
 > * João Paulo da Silva Cardoso
 > 
 >
-> **GitHub Repository:** [jpscard/uci_ai (Main Branch)](https://github.com/jpscard/uci_ai/tree/main)
+> **GitHub Repository:** [jpscard/segurabot (Main Branch)](https://github.com/jpscard/segurabot)
 > **URL de Produção Live:** [segurabot.web.app](https://segurabot.web.app)
 
 ---
